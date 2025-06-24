@@ -6,6 +6,7 @@ export interface Answer {
 
 export interface FoodRecommendation {
   name: string;
+  title?: string;
   reason: string;
   location?: string;
   price?: string;
@@ -328,7 +329,8 @@ export class XenovaRecommender implements AIRecommender {
     const analyzedResults = searchResults.slice(0, 5).map((result, index) => {
       const restaurantName =
         result.restaurantName ||
-        this.extractRestaurantName(result.title, foodType, index);
+        result.title ||
+        `${foodType} 맛집 ${index + 1}`;
       const analysis = this.analyzeSearchResult(
         result,
         mood,
@@ -341,6 +343,7 @@ export class XenovaRecommender implements AIRecommender {
 
       return {
         name: restaurantName,
+        title: result.title || `${foodType} 맛집`,
         reason: analysis.reason,
         location: analysis.location,
         price: this.estimatePrice(budget),
@@ -364,39 +367,6 @@ export class XenovaRecommender implements AIRecommender {
 
     // 상위 3개 선택
     return sortedResults.slice(0, 3);
-  }
-
-  private extractRestaurantName(
-    _title: string,
-    foodType: string,
-    index: number
-  ): string {
-    // 검색 결과에서 실제같은 식당 이름 생성
-    const prefixes = [
-      "맛고을",
-      "서울집",
-      "행복한끼",
-      "우리집",
-      "금강산",
-      "향토집",
-      "전통가",
-      "원조집",
-    ];
-    const suffixes = [
-      "본점",
-      "명가",
-      "전문점",
-      "맛집",
-      "하우스",
-      "키친",
-      "레스토랑",
-      "",
-    ];
-
-    const prefix = prefixes[index % prefixes.length];
-    const suffix = suffixes[Math.floor(Math.random() * suffixes.length)];
-
-    return `${prefix} ${foodType}${suffix}`.trim();
   }
 
   private analyzeSearchResult(
@@ -513,6 +483,7 @@ export class XenovaRecommender implements AIRecommender {
     const backupRecommendations = [
       {
         name: `AI 추천 ${foodType} 맛집`,
+        title: `AI 추천 ${foodType} 맛집`,
         reason: `현재 실시간 위치 기반 검색이 제한되어 있지만, AI 학습 데이터 분석에 따르면 ${mood} 기분에는 ${foodType}이 최적의 선택입니다. ${locationText} ${budget} 예산 범위의 맛집을 찾아보세요!`,
         location: userLocation?.address || "근처 맛집 직접 검색 권장",
         price: this.estimatePrice(budget),
@@ -523,6 +494,7 @@ export class XenovaRecommender implements AIRecommender {
       },
       {
         name: `스마트 추천 ${foodType} 전문점`,
+        title: `스마트 추천 ${foodType} 전문점`,
         reason: `빅데이터 분석 결과, ${mood} 상태일 때 ${foodType}을 선택하시는 분들의 만족도가 평균 4.5점 이상으로 매우 높습니다. ${locationText} 적합한 곳을 찾아보세요!`,
         location: userLocation?.address || "지역별 맛집 탐색 추천",
         price: this.estimatePrice(budget),
@@ -533,6 +505,7 @@ export class XenovaRecommender implements AIRecommender {
       },
       {
         name: `개인화 ${foodType} 추천`,
+        title: `개인화 ${foodType} 추천`,
         reason: `AI가 당신의 취향과 위치를 분석한 결과, ${mood} 기분과 ${budget} 예산을 고려할 때 ${foodType} 전문점이 가장 만족스러운 선택이 될 것으로 예측됩니다.`,
         location: userLocation?.address || "주변 지역 직접 탐색",
         price: this.estimatePrice(budget),

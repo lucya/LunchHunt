@@ -13,6 +13,7 @@ interface Answer {
 
 interface FoodRecommendation {
   name: string;
+  title?: string;
   reason: string;
   location?: string;
   price?: string;
@@ -535,15 +536,28 @@ const GamePage: React.FC = () => {
                           alignItems: "flex-start",
                           marginBottom: "1rem",
                         }}>
-                        <h3
-                          style={{
-                            fontSize: "1.75rem",
-                            fontWeight: 700,
-                            marginBottom: "0.5rem",
-                            color: "#1f2937",
-                          }}>
-                          {index + 1}. {rec.name}
-                        </h3>
+                        <div>
+                          {rec.title && (
+                            <div
+                              style={{
+                                fontSize: "1rem",
+                                color: "#6b7280",
+                                marginBottom: "0.25rem",
+                                fontWeight: 500,
+                              }}>
+                              {rec.title}
+                            </div>
+                          )}
+                          <h3
+                            style={{
+                              fontSize: "1.75rem",
+                              fontWeight: 700,
+                              marginBottom: "0.5rem",
+                              color: "#1f2937",
+                            }}>
+                            {index + 1}. {rec.name}
+                          </h3>
+                        </div>
                         <div style={{ display: "flex", gap: "0.5rem" }}>
                           {rec.distance && (
                             <span
