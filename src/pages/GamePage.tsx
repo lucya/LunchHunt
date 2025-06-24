@@ -4,7 +4,7 @@ import {
   LocationService,
   UserLocation,
 } from "../aiRecommender";
-import { MOODS, FOOD_TYPES, BUDGETS } from "../data/foodData";
+import { MOODS, FOOD_TYPES, BUDGETS } from "../constants";
 
 interface Answer {
   questionId: string;
