@@ -1,3 +1,6 @@
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { NaverMapService } from "./naverMapService";
+
 // 타입 정의
 export interface Answer {
   questionId: string;
@@ -14,6 +17,10 @@ export interface FoodRecommendation {
   distance?: string;
   imageUrl?: string;
   foodType?: string;
+  phone?: string;
+  website?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface UserLocation {
@@ -30,711 +37,623 @@ export interface AIRecommender {
   ): Promise<FoodRecommendation[]>;
 }
 
-// 위치 기반 웹 검색 AI 추천 시스템
-export class XenovaRecommender implements AIRecommender {
+// Gemini 2.5 Flash Preview 추천 시스템
+export class GeminiRecommender implements AIRecommender {
+  private genAI: GoogleGenerativeAI;
+  private model: any;
+
+  constructor() {
+    // API 키는 환경변수에서 가져오거나 직접 설정
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "YOUR_GEMINI_API_KEY";
+    this.genAI = new GoogleGenerativeAI(apiKey);
+    this.model = this.genAI.getGenerativeModel({
+      model: "gemini-2.0-flash-exp", // gemini-2.5-flash-preview-05-20 대신 사용 가능한 모델
+    });
+  }
+
   async generateRecommendations(
     answers: Answer[],
     userLocation?: UserLocation
   ): Promise<FoodRecommendation[]> {
-    // AI가 "생각하는" 딜레이
-    await new Promise((resolve) =>
-      setTimeout(resolve, 1000 + Math.random() * 1500)
-    );
-
-    const mood = answers.find((a) => a.questionId === "mood")?.value || "";
-    const foodType =
-      answers.find((a) => a.questionId === "foodType")?.value || "";
-    const budget = answers.find((a) => a.questionId === "budget")?.value || "";
-
-    console.log("🔍 위치 기반 웹 검색 AI 분석 시작:", {
-      mood,
-      foodType,
-      budget,
-      userLocation,
-    });
-
     try {
-      // 1단계: 위치 기반 검색 쿼리 생성
-      const searchQuery = this.generateLocationBasedSearchQuery(
+      const mood = answers.find((a) => a.questionId === "mood")?.value || "";
+      const foodType =
+        answers.find((a) => a.questionId === "foodType")?.value || "";
+      const budget =
+        answers.find((a) => a.questionId === "budget")?.value || "";
+
+      console.log("🤖 실제 음식점 검색 시작:", {
         mood,
         foodType,
         budget,
-        userLocation
-      );
-      console.log("🔎 위치 기반 검색 쿼리:", searchQuery);
+        userLocation,
+      });
 
-      // 2단계: 웹 검색 실행 (위치 기반)
-      const searchResults = await this.performRealWebSearch(
-        searchQuery,
-        userLocation
-      );
-      console.log("📊 검색 결과:", searchResults.length, "개");
-
-      // 3단계: AI 분석 및 추천 생성
-      const recommendations = await this.analyzeAndRecommend(
-        searchResults,
-        mood,
+      // 1단계: 실제 운영중인 음식점 검색
+      const realRestaurants = await this.searchRealRestaurants(
         foodType,
-        budget,
         userLocation
       );
 
-      console.log("✨ 위치 기반 AI 추천 완료:", recommendations);
-      return recommendations;
-    } catch (error) {
-      console.error(
-        "❌ 위치 기반 검색 실패, 지능형 백업 시스템 활성화:",
-        error
-      );
-      return this.generateBackupRecommendations(
-        mood,
-        foodType,
-        budget,
-        userLocation
-      );
-    }
-  }
+      if (realRestaurants.length > 0) {
+        console.log("🏪 실제 음식점 발견:", realRestaurants.length, "개");
 
-  private generateLocationBasedSearchQuery(
-    mood: string,
-    foodType: string,
-    budget: string,
-    userLocation?: UserLocation
-  ): string {
-    // AI가 위치와 상황을 분석해서 최적의 검색어 생성
-    const moodKeywords = this.getMoodKeywords(mood);
-    const budgetKeywords = this.getBudgetKeywords(budget);
+        // 2단계: Gemini AI로 개인화된 추천 이유 생성
+        const personalizedRecommendations =
+          await this.personalizeRecommendations(
+            realRestaurants,
+            mood,
+            budget,
+            userLocation
+          );
 
-    // 위치 기반 검색어 생성
-    let locationQuery = "서울 맛집"; // 기본값
-
-    if (userLocation) {
-      if (userLocation.address) {
-        locationQuery = `${userLocation.address} 근처 맛집`;
+        console.log("✨ 개인화 추천 완료:", personalizedRecommendations);
+        return personalizedRecommendations;
       } else {
-        // 좌표를 기반으로 대략적인 지역 추정
-        const estimatedArea = this.estimateAreaFromCoordinates(
-          userLocation.latitude,
-          userLocation.longitude
+        console.log("⚠️ 실제 음식점 검색 실패, Gemini AI 추천 사용");
+
+        // 3단계: Gemini AI 백업 추천
+        const prompt = this.createPrompt(mood, foodType, budget, userLocation);
+        const result = await this.model.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
+
+        const recommendations = this.parseGeminiResponse(
+          text,
+          foodType,
+          userLocation
         );
-        locationQuery = `${estimatedArea} 근처 맛집`;
+        console.log("✨ Gemini AI 백업 추천 완료:", recommendations);
+        return recommendations;
       }
+    } catch (error) {
+      console.error("❌ Gemini AI 추천 실패:", error);
+      return this.generateFallbackRecommendations(answers, userLocation);
     }
-
-    return `${foodType} ${locationQuery} ${moodKeywords} ${budgetKeywords} 추천`;
   }
 
-  private estimateAreaFromCoordinates(lat: number, lng: number): string {
-    // 서울 주요 지역의 대략적인 좌표 범위로 지역 추정
-    const seoulAreas = [
-      { name: "강남구", lat: 37.5173, lng: 127.0473, range: 0.02 },
-      { name: "마포구", lat: 37.5665, lng: 126.9016, range: 0.02 },
-      { name: "종로구", lat: 37.5735, lng: 126.979, range: 0.02 },
-      { name: "중구", lat: 37.5636, lng: 126.997, range: 0.02 },
-      { name: "서초구", lat: 37.4837, lng: 127.0324, range: 0.02 },
-      { name: "영등포구", lat: 37.5264, lng: 126.8962, range: 0.02 },
-      { name: "용산구", lat: 37.5384, lng: 126.9654, range: 0.02 },
-      { name: "성동구", lat: 37.5636, lng: 127.0369, range: 0.02 },
-    ];
-
-    for (const area of seoulAreas) {
-      const distance = Math.sqrt(
-        Math.pow(lat - area.lat, 2) + Math.pow(lng - area.lng, 2)
-      );
-      if (distance <= area.range) {
-        return area.name;
-      }
-    }
-
-    return "서울시"; // 기본값
-  }
-
-  private getMoodKeywords(mood: string): string {
-    const moodMap: { [key: string]: string } = {
-      행복해요: "분위기 좋은",
-      피곤해요: "든든한 집밥",
-      "스트레스 받아요": "매운 음식",
-      "기분이 평범해요": "일반적인",
-      설레요: "특별한 데이트",
-      우울해요: "따뜻한 위로",
-      활기차요: "에너지 충전",
-      여유로워요: "힐링",
-    };
-
-    return Object.keys(moodMap).find((key) =>
-      mood.includes(key.replace("요", ""))
-    )
-      ? moodMap[
-          Object.keys(moodMap).find((key) =>
-            mood.includes(key.replace("요", ""))
-          )!
-        ]
-      : "맛있는";
-  }
-
-  private getBudgetKeywords(budget: string): string {
-    if (budget.includes("1만원")) return "저렴한 가성비";
-    if (budget.includes("2만원")) return "합리적인 가격";
-    if (budget.includes("3만원")) return "적당한 가격";
-    if (budget.includes("4만원") || budget.includes("5만원"))
-      return "고급 맛집";
-    return "";
-  }
-
-  private async performRealWebSearch(
-    query: string,
+  // 실제 운영중인 음식점 검색
+  private async searchRealRestaurants(
+    foodType: string,
     userLocation?: UserLocation
-  ): Promise<any[]> {
-    // 실제 웹 검색 수행
-    console.log(`🔍 실제 웹 검색 중: "${query}"`);
-
+  ): Promise<FoodRecommendation[]> {
     try {
-      // 위치 기반 검색 쿼리 생성
-      const locationQuery = userLocation
-        ? `${query} ${userLocation.address} 근처 맛집`
-        : `${query} 서울 맛집`;
+      const locationText = userLocation?.address || "서울";
+      console.log("🔍 실제 음식점 데이터베이스 검색:", {
+        foodType,
+        locationText,
+      });
 
-      console.log(`🌐 검색 쿼리: ${locationQuery}`);
-
-      // 간단한 웹 검색 시뮬레이션 (실제로는 맛집 API 사용 권장)
-      const searchResults = await this.searchRestaurants(
-        locationQuery,
+      // 네이버 검색 API로 실시간 음식점 검색
+      const realRestaurants = await this.getRealRestaurantData(
+        foodType,
+        locationText,
         userLocation
       );
 
-      if (searchResults.length > 0) {
-        console.log(`✅ 웹 검색 완료: ${searchResults.length}개 결과 발견`);
-        return searchResults;
+      if (realRestaurants.length > 0) {
+        console.log(
+          "✅ 네이버에서 실제 음식점 발견:",
+          realRestaurants.length,
+          "개"
+        );
+        return realRestaurants;
       } else {
-        console.log("⚠️ 웹 검색 결과 없음, 기본 추천 사용");
-        return this.getBasicRecommendations(query, userLocation);
+        console.log("⚠️ 해당 지역/음식 종류의 등록된 음식점 없음");
+        return [];
       }
     } catch (error) {
-      console.error("❌ 웹 검색 실패:", error);
-      return this.getBasicRecommendations(query, userLocation);
+      console.error("❌ 실제 음식점 검색 실패:", error);
+      return [];
     }
   }
 
-  private async searchRestaurants(
-    query: string,
-    userLocation?: UserLocation
-  ): Promise<any[]> {
-    // 실제 맛집 검색 (현재는 기본 추천으로 대체)
-    // 실제 구현에서는 카카오맵 API, 네이버맵 API, Google Places API 등 사용
-
-    const foodType = query.split(" ")[0];
-    const area = userLocation?.address || "서울";
-
-    console.log(`📍 ${area}에서 ${foodType} 검색`);
-
-    // 실제 맛집 데이터 (간소화된 예시)
-    return this.getBasicRecommendations(query, userLocation);
-  }
-
-  private getBasicRecommendations(
-    query: string,
-    userLocation?: UserLocation
-  ): any[] {
-    const foodType = query.split(" ")[0];
-    const area = userLocation?.address || "서울";
-
-    return [
-      {
-        title: `${area} ${foodType} 맛집`,
-        snippet: `${area}에서 찾은 ${foodType} 전문점입니다. 현지 주민들이 자주 찾는 맛집으로 알려져 있습니다.`,
-        url: "#",
-        rating: 4.5,
-        distance: this.generateDistance(),
-        imageUrl: this.getRestaurantImageFromSearch(foodType, 1),
-        restaurantName: `${area} ${foodType} 맛집`,
-        menuName: this.generateSpecificFood(foodType),
-      },
-      {
-        title: `인기 ${foodType} 전문점`,
-        snippet: `평점이 높고 리뷰가 좋은 ${foodType} 전문점을 추천합니다.`,
-        url: "#",
-        rating: 4.3,
-        distance: this.generateDistance(),
-        imageUrl: this.getRestaurantImageFromSearch(foodType, 2),
-        restaurantName: `${foodType} 명가`,
-        menuName: this.generateSpecificFood(foodType),
-      },
-      {
-        title: `${foodType} 베스트 맛집`,
-        snippet: `지역에서 가장 유명한 ${foodType} 맛집 중 하나입니다.`,
-        url: "#",
-        rating: 4.7,
-        distance: this.generateDistance(),
-        imageUrl: this.getRestaurantImageFromSearch(foodType, 3),
-        restaurantName: `${foodType} 하우스`,
-        menuName: this.generateSpecificFood(foodType),
-      },
-    ];
-  }
-
-  private getRestaurantImageFromSearch(
+  // 네이버 검색 API를 통한 실시간 음식점 검색
+  private async getRealRestaurantData(
     foodType: string,
-    restaurantId: number
-  ): string {
-    // 실제 검색 결과에서 가져온 것처럼 시뮬레이션된 음식점별 이미지
-    // 실제 환경에서는 Google Places API, Yelp API 등에서 실제 음식점 사진을 가져옴
+    location: string,
+    userLocation?: UserLocation
+  ): Promise<FoodRecommendation[]> {
+    try {
+      console.log("🔍 네이버 검색 API로 실시간 음식점 검색 시작:", {
+        foodType,
+        location,
+      });
 
-    // 다단계 fallback 시스템으로 안정적인 이미지 제공
-    const imageOptions = [
-      // 1차: Picsum Photos (가장 안정적)
-      `https://picsum.photos/800/600?random=${
-        restaurantId + foodType.charCodeAt(0) * 10
-      }`,
+      // 네이버 검색 API로 음식점 검색
+      const searchQuery = `${foodType} 맛집 ${location}`;
+      const naverResults = await NaverMapService.searchRestaurant(
+        searchQuery,
+        location
+      );
 
-      // 2차: 음식점 이름이 포함된 placeholder
-      `https://via.placeholder.com/800x600/4F46E5/FFFFFF?text=${encodeURIComponent(
-        `${foodType} 맛집`
-      )}`,
+      if (naverResults.length === 0) {
+        console.log("⚠️ 네이버 검색 결과 없음");
+        return [];
+      }
 
-      // 3차: 다른 색상의 placeholder
-      `https://via.placeholder.com/800x600/FF6B6B/FFFFFF?text=${encodeURIComponent(
-        `${foodType} 전문점`
-      )}`,
+      console.log(`✅ 네이버에서 ${naverResults.length}개 음식점 발견`);
 
-      // 4차: 최종 fallback (CSS에서 처리)
-      "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjYwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjNmNGY2Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSI0OCIgZmlsbD0iIzM3NDE1MSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPvCfjeC4j+KAjTwvdGV4dD48L3N2Zz4=",
-    ];
+      // 사진이 없는 음식점들을 위한 추가 사진 검색
+      const enrichedResults = await Promise.all(
+        naverResults.map(async (restaurant) => {
+          if (restaurant.photos.length === 0) {
+            console.log(`🔍 ${restaurant.name} 사진 추가 검색 중...`);
+            try {
+              const additionalPhoto =
+                await NaverMapService.getRestaurantMainPhoto(
+                  restaurant.name,
+                  restaurant.address
+                );
+              if (additionalPhoto) {
+                restaurant.photos = [
+                  {
+                    photoUrl: additionalPhoto,
+                    thumbnailUrl: additionalPhoto,
+                    width: 400,
+                    height: 300,
+                  },
+                ];
+                console.log(`✅ ${restaurant.name} 추가 사진 발견!`);
+              }
+            } catch (error) {
+              console.log(`⚠️ ${restaurant.name} 추가 사진 검색 실패`);
+            }
+          }
+          return restaurant;
+        })
+      );
 
-    return imageOptions[0]; // 가장 안정적인 첫 번째 옵션 사용
+      // 네이버 검색 결과를 FoodRecommendation 형식으로 변환
+      const recommendations = enrichedResults.map((restaurant, index) => {
+        // 거리 계산 (좌표가 없으면 랜덤)
+        let distance = `${(Math.random() * 3 + 0.5).toFixed(1)}km`;
+
+        // 첫 번째 사진 URL 가져오기 (유효한 URL인지 확인)
+        let mainPhotoUrl = null;
+        if (restaurant.photos.length > 0) {
+          const photoUrl = restaurant.photos[0].photoUrl;
+          // 기본적인 URL 유효성 검사
+          if (
+            photoUrl &&
+            photoUrl.startsWith("http") &&
+            photoUrl.includes(".")
+          ) {
+            mainPhotoUrl = photoUrl;
+          }
+        }
+
+        console.log(`📸 ${restaurant.name} 사진 정보:`, {
+          photosCount: restaurant.photos.length,
+          mainPhotoUrl: mainPhotoUrl,
+          allPhotos: restaurant.photos.map((p) => p.photoUrl).slice(0, 2), // 처음 2개만 로깅
+        });
+
+        return {
+          name: restaurant.name,
+          title: restaurant.name,
+          reason: `네이버 검색에서 찾은 ${foodType} 전문점으로 실제 운영중입니다.`,
+          location: restaurant.address,
+          price: "가격 정보 없음", // 네이버 API에서 가격 정보가 없을 수 있음
+          rating: restaurant.rating
+            ? `${restaurant.rating}/5.0`
+            : "평점 정보 없음",
+          distance: distance,
+          imageUrl: mainPhotoUrl || undefined,
+          foodType: foodType,
+          phone: restaurant.phone,
+          website: undefined,
+          latitude: undefined, // 네이버 로컬 검색 API에서는 좌표를 제공하지 않을 수 있음
+          longitude: undefined,
+        };
+      });
+
+      // 최대 5개 반환
+      return recommendations.slice(0, 5);
+    } catch (error) {
+      console.error("❌ 네이버 검색 API 호출 실패:", error);
+      return [];
+    }
   }
 
-  private generateDistance(): string {
-    const distances = [
-      "0.1km",
-      "0.2km",
-      "0.3km",
-      "0.5km",
-      "0.7km",
-      "0.9km",
-      "1.2km",
-      "1.5km",
-      "2.1km",
-    ];
-    return distances[Math.floor(Math.random() * distances.length)];
-  }
-
-  private async analyzeAndRecommend(
-    searchResults: any[],
+  // Gemini AI로 개인화된 추천 이유 생성
+  private async personalizeRecommendations(
+    restaurants: FoodRecommendation[],
     mood: string,
-    foodType: string,
     budget: string,
     userLocation?: UserLocation
   ): Promise<FoodRecommendation[]> {
-    // AI가 검색 결과를 분석해서 최적의 추천 생성
-    const analyzedResults = searchResults.slice(0, 5).map((result, index) => {
-      const restaurantName =
-        result.restaurantName ||
-        result.title ||
-        `${foodType} 맛집 ${index + 1}`;
-      const analysis = this.analyzeSearchResult(
-        result,
-        mood,
-        foodType,
-        budget,
-        userLocation
-      );
-      const specificFood =
-        result.menuName || this.generateSpecificFood(foodType);
+    try {
+      const restaurantList = restaurants
+        .map((r) => `- ${r.name} (${r.location})`)
+        .join("\n");
 
-      return {
-        name: restaurantName,
-        title: result.title || `${foodType} 맛집`,
-        reason: analysis.reason,
-        location: analysis.location,
-        price: this.estimatePrice(budget),
-        rating: `${result.rating}/5.0`,
-        distance: result.distance,
-        imageUrl: result.imageUrl,
-        foodType: specificFood,
-      };
-    });
+      const prompt = `다음은 실제 운영중인 음식점 목록입니다:
+${restaurantList}
 
-    // 중복 제거 및 품질 필터링
-    const uniqueResults = this.removeDuplicates(analyzedResults);
+사용자 정보:
+- 기분: ${mood}
+- 예산: ${budget}
+- 위치: ${userLocation?.address || "서울"}
 
-    // AI가 사용자 상황에 맞게 정렬 (위치 기반 우선순위 포함)
-    const sortedResults = this.sortByRelevance(
-      uniqueResults,
-      mood,
-      budget,
-      userLocation
-    );
+각 음식점에 대해 사용자의 기분과 예산을 고려한 개인화된 추천 이유를 작성해주세요.
+다음 JSON 형식으로 응답해주세요:
 
-    // 상위 3개 선택
-    return sortedResults.slice(0, 3);
+[
+  {
+    "name": "음식점 이름",
+    "reason": "개인화된 추천 이유 (기분과 예산을 반영한 구체적인 설명)",
+    "estimatedPrice": "예상 가격대",
+    "rating": "예상 평점/5.0"
   }
+]`;
 
-  private analyzeSearchResult(
-    result: any,
-    mood: string,
-    foodType: string,
-    budget: string,
-    userLocation?: UserLocation
-  ): any {
-    // AI가 검색 결과를 분석해서 개인화된 추천 이유 생성
-    const locationText = userLocation ? "현재 위치에서" : "서울에서";
+      const result = await this.model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
 
-    const analysisTemplates = [
-      `📍 ${locationText} ${result.distance} 거리에 있는 ${foodType} 맛집이에요! ${mood}할 때 방문하신 분들의 리뷰가 특히 좋고, 평점 ${result.rating}점으로 검증된 맛집입니다.`,
-      `🚶‍♂️ 걸어서 갈 수 있는 거리(${result.distance})에 위치한 ${foodType} 전문점입니다. ${budget} 예산대에서 가성비가 뛰어나다고 온라인에서 많이 언급되고 있어요.`,
-      `🎯 위치 기반 AI 분석 결과: ${mood} 기분일 때 이 맛집을 방문한 고객들의 만족도가 ${Math.floor(
-        result.rating * 20
-      )}%로 매우 높습니다. 현재 위치에서 ${result.distance} 거리예요.`,
-      `📱 실시간 위치 데이터: 당신과 비슷한 취향을 가진 사람들이 ${mood} 상태일 때 자주 찾는 ${foodType} 맛집으로 분석됩니다. 접근성도 좋아요!`,
-      `🔍 근처 맛집 검색 결과: 최근 ${foodType} 관련 검색에서 상위권에 랭크된 맛집으로, ${budget} 예산에 딱 맞고 ${result.distance} 거리에 있습니다.`,
-    ];
+      console.log("🤖 개인화 추천 응답:", text);
 
-    return {
-      reason:
-        analysisTemplates[Math.floor(Math.random() * analysisTemplates.length)],
-      location: this.generateNearbyLocation(userLocation),
-    };
-  }
+      // JSON 파싱
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const personalizedData = JSON.parse(jsonMatch[0]);
 
-  private generateNearbyLocation(userLocation?: UserLocation): string {
-    if (userLocation && userLocation.address) {
-      return userLocation.address + " 근처";
+        // 기존 음식점 정보와 개인화된 추천 이유 결합
+        return restaurants.map((restaurant, index) => {
+          const personalized = personalizedData[index] || {};
+          return {
+            ...restaurant,
+            reason: personalized.reason || restaurant.reason,
+            price: personalized.estimatedPrice || restaurant.price,
+            rating: personalized.rating || restaurant.rating,
+          };
+        });
+      }
+    } catch (error) {
+      console.error("❌ 개인화 추천 실패:", error);
     }
 
-    const locations = [
-      "강남구 역삼동",
-      "마포구 홍대입구",
-      "종로구 인사동",
-      "중구 명동",
-      "서초구 교대역",
-      "영등포구 여의도",
-      "용산구 이태원",
-      "성동구 성수동",
-      "송파구 잠실",
-      "강북구 수유동",
-    ];
-    return locations[Math.floor(Math.random() * locations.length)];
+    // 개인화 실패 시 기본 추천 이유 사용
+    return restaurants.map((restaurant) => ({
+      ...restaurant,
+      reason: `${mood}에 어울리는 ${restaurant.foodType} 전문점으로, ${budget} 예산에 적합한 곳입니다.`,
+    }));
   }
 
-  private estimatePrice(budget: string): string {
-    if (budget.includes("1만원")) return "8,000-12,000원";
-    if (budget.includes("2만원")) return "15,000-25,000원";
-    if (budget.includes("3만원")) return "25,000-35,000원";
-    if (budget.includes("4만원")) return "35,000-45,000원";
-    if (budget.includes("5만원")) return "45,000-55,000원";
-    return "가격 문의";
-  }
-
-  private removeDuplicates(
-    results: FoodRecommendation[]
-  ): FoodRecommendation[] {
-    const seen = new Set();
-    return results.filter((item) => {
-      const key = item.name.toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }
-
-  private sortByRelevance(
-    results: FoodRecommendation[],
-    mood: string,
-    budget: string,
-    userLocation?: UserLocation
-  ): FoodRecommendation[] {
-    // AI가 사용자 상황에 맞게 결과 정렬 (위치 기반 우선순위 포함)
-    return results.sort((a, b) => {
-      let scoreA = Math.random() * 10;
-      let scoreB = Math.random() * 10;
-
-      // 기분과 예산에 따른 가중치 부여
-      if (mood.includes("행복") && a.name.includes("행복")) scoreA += 5;
-      if (mood.includes("행복") && b.name.includes("행복")) scoreB += 5;
-
-      if (budget.includes("5만원") && a.name.includes("명가")) scoreA += 3;
-      if (budget.includes("5만원") && b.name.includes("명가")) scoreB += 3;
-
-      // 위치 기반 가중치 (가까운 곳 우선)
-      if (userLocation && a.distance && b.distance) {
-        const distanceA = parseFloat(a.distance.replace("km", ""));
-        const distanceB = parseFloat(b.distance.replace("km", ""));
-
-        // 가까운 곳에 더 높은 점수
-        scoreA += (2 - distanceA) * 2;
-        scoreB += (2 - distanceB) * 2;
-      }
-
-      return scoreB - scoreA;
-    });
-  }
-
-  private generateBackupRecommendations(
+  private createPrompt(
     mood: string,
     foodType: string,
     budget: string,
     userLocation?: UserLocation
-  ): FoodRecommendation[] {
-    // 위치 기반 검색 실패 시 지능형 백업 추천
-    console.log("🔄 위치 기반 백업 추천 시스템 활성화");
+  ): string {
+    const locationText = userLocation?.address || "서울";
+    const coordinates = userLocation
+      ? `(위도: ${userLocation.latitude}, 경도: ${userLocation.longitude})`
+      : "";
 
-    const locationText = userLocation ? "현재 위치 근처에서" : "주변에서";
+    return `당신은 맛집 추천 전문가입니다. 다음 조건에 맞는 실제 존재하는 음식점 3곳을 추천해주세요:
 
-    const backupRecommendations = [
-      {
-        name: `AI 추천 ${foodType} 맛집`,
-        title: `AI 추천 ${foodType} 맛집`,
-        reason: `현재 실시간 위치 기반 검색이 제한되어 있지만, AI 학습 데이터 분석에 따르면 ${mood} 기분에는 ${foodType}이 최적의 선택입니다. ${locationText} ${budget} 예산 범위의 맛집을 찾아보세요!`,
-        location: userLocation?.address || "근처 맛집 직접 검색 권장",
-        price: this.estimatePrice(budget),
-        rating: "맛집 앱에서 확인",
-        distance: "위치 확인 필요",
-        imageUrl: this.getRestaurantImageFromSearch(foodType, 1),
-        foodType: this.generateSpecificFood(foodType),
-      },
-      {
-        name: `스마트 추천 ${foodType} 전문점`,
-        title: `스마트 추천 ${foodType} 전문점`,
-        reason: `빅데이터 분석 결과, ${mood} 상태일 때 ${foodType}을 선택하시는 분들의 만족도가 평균 4.5점 이상으로 매우 높습니다. ${locationText} 적합한 곳을 찾아보세요!`,
-        location: userLocation?.address || "지역별 맛집 탐색 추천",
-        price: this.estimatePrice(budget),
-        rating: "4.5+ 예상",
-        distance: "도보 10분 내외",
-        imageUrl: this.getRestaurantImageFromSearch(foodType, 2),
-        foodType: this.generateSpecificFood(foodType),
-      },
-      {
-        name: `개인화 ${foodType} 추천`,
-        title: `개인화 ${foodType} 추천`,
-        reason: `AI가 당신의 취향과 위치를 분석한 결과, ${mood} 기분과 ${budget} 예산을 고려할 때 ${foodType} 전문점이 가장 만족스러운 선택이 될 것으로 예측됩니다.`,
-        location: userLocation?.address || "주변 지역 직접 탐색",
-        price: this.estimatePrice(budget),
-        rating: "리뷰 사이트 확인",
-        distance: "근거리 추천",
-        imageUrl: this.getRestaurantImageFromSearch(foodType, 3),
-        foodType: this.generateSpecificFood(foodType),
-      },
-    ];
+조건:
+- 기분: ${mood}
+- 음식 종류: ${foodType}
+- 예산: ${budget}
+- 위치: ${locationText} ${coordinates}
 
-    return backupRecommendations;
+각 추천에 대해 다음 형식으로 JSON 배열로 응답해주세요:
+[
+  {
+    "name": "실제 음식점 이름",
+    "reason": "추천 이유 (기분과 예산을 고려한 구체적인 설명)",
+    "location": "구체적인 위치 (동/구 포함)",
+    "latitude": 음식점의 위도 (숫자),
+    "longitude": 음식점의 경도 (숫자),
+    "price": "예상 가격대",
+    "rating": "예상 평점/5.0",
+    "foodType": "구체적인 메뉴명",
+    "imageUrl": "음식점 또는 음식 사진 URL",
+    "phone": "전화번호 (있다면)",
+    "website": "웹사이트 또는 블로그 링크 (있다면)"
+  }
+]
+
+중요사항:
+1. 실제 존재하는 유명한 음식점을 우선 추천해주세요
+2. latitude, longitude는 실제 음식점의 정확한 좌표를 제공해주세요
+3. imageUrl은 해당 음식점이나 음식의 실제 사진 링크를 제공해주세요
+4. 추천 이유는 사용자의 기분과 예산을 반영하여 개인화된 내용으로 작성해주세요`;
   }
 
-  private generateSpecificFood(foodType: string): string {
-    // 음식 종류별 구체적인 메뉴 생성
-    const foodMenus: { [key: string]: string[] } = {
-      한식: [
-        "김치찌개",
-        "비빔밥",
-        "불고기",
-        "갈비탕",
-        "삼겹살",
-        "냉면",
-        "된장찌개",
-        "제육볶음",
-      ],
-      중식: [
-        "짜장면",
-        "짬뽕",
-        "탕수육",
-        "마파두부",
-        "깐풍기",
-        "볶음밥",
-        "군만두",
-        "양장피",
-      ],
-      일식: [
-        "라멘",
-        "초밥",
-        "돈까스",
-        "우동",
-        "규동",
-        "야키토리",
-        "타코야키",
-        "오코노미야키",
-      ],
-      양식: [
-        "스테이크",
-        "파스타",
-        "피자",
-        "햄버거",
-        "리조또",
-        "샐러드",
-        "오믈렛",
-        "그라탕",
-      ],
-      분식: [
-        "떡볶이",
-        "김밥",
-        "라면",
-        "순대",
-        "튀김",
-        "어묵",
-        "만두",
-        "잔치국수",
-      ],
-      패스트푸드: [
-        "햄버거",
-        "피자",
-        "치킨",
-        "핫도그",
-        "감자튀김",
-        "너겟",
-        "샌드위치",
-        "버거",
-      ],
-      채식: [
-        "샐러드",
-        "비건버거",
-        "두부스테이크",
-        "야채볶음",
-        "퀴노아볼",
-        "아보카도토스트",
-        "스무디볼",
-        "베지타리안파스타",
-      ],
-      동남아식: [
-        "팟타이",
-        "똠얌꿍",
-        "그린커리",
-        "쌀국수",
-        "분짜",
-        "망고스틱라이스",
-        "라크사",
-        "가도가도",
-      ],
-      인도식: [
-        "카레",
-        "난",
-        "비리야니",
-        "탄두리치킨",
-        "사모사",
-        "라씨",
-        "마살라",
-        "치킨티카",
-      ],
-      멕시칸: [
-        "타코",
-        "부리또",
-        "나초",
-        "퀘사디야",
-        "엔칠라다",
-        "과카몰리",
-        "파히타",
-        "토르티야",
-      ],
-      이탈리안: [
-        "파스타",
-        "피자",
-        "리조또",
-        "라자냐",
-        "뇨끼",
-        "카프레제",
-        "브루스케타",
-        "젤라또",
-      ],
-      프렌치: [
-        "스테이크",
-        "오니언수프",
-        "라따뚜이",
-        "코코뱅",
-        "크로크무슈",
-        "마카롱",
-        "크루아상",
-        "에스카르고",
-      ],
-      태국식: [
-        "팟타이",
-        "똠얌꿍",
-        "그린커리",
-        "망고스틱라이스",
-        "쏨땀",
-        "라드나",
-        "가팡",
-        "카오팟",
-      ],
-      베트남식: [
-        "쌀국수",
-        "분짜",
-        "반미",
-        "월남쌈",
-        "분보후에",
-        "카페수아다",
-        "반쎄오",
-        "고이꾸온",
-      ],
-      아시안퓨전: [
-        "퓨전볶음밥",
-        "아시안샐러드",
-        "퓨전카레",
-        "아시안타코",
-        "퓨전라면",
-        "아시안파스타",
-        "퓨전덮밥",
-        "아시안피자",
-      ],
-      치킨: [
-        "후라이드치킨",
-        "양념치킨",
-        "간장치킨",
-        "마늘치킨",
-        "허니머스타드치킨",
-        "핫윙",
-        "치킨텐더",
-        "치킨샐러드",
-      ],
-      피자: [
-        "페퍼로니피자",
-        "마르게리타",
-        "하와이안피자",
-        "불고기피자",
-        "시카고피자",
-        "치즈피자",
-        "베지피자",
-        "고르곤졸라피자",
-      ],
-      버거: [
-        "비프버거",
-        "치킨버거",
-        "치즈버거",
-        "베이컨버거",
-        "더블버거",
-        "베지버거",
-        "피쉬버거",
-        "바비큐버거",
-      ],
-      샐러드: [
-        "시저샐러드",
-        "그린샐러드",
-        "니코이즈샐러드",
-        "코브샐러드",
-        "치킨샐러드",
-        "참치샐러드",
-        "과일샐러드",
-        "퀴노아샐러드",
-      ],
-      디저트: [
-        "케이크",
-        "마카롱",
-        "아이스크림",
-        "티라미수",
-        "크렘브륄레",
-        "판나코타",
-        "타르트",
-        "젤라또",
-      ],
-    };
+  private parseGeminiResponse(
+    text: string,
+    foodType: string,
+    userLocation?: UserLocation
+  ): FoodRecommendation[] {
+    try {
+      // JSON 부분만 추출
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return parsed.map((item: any, index: number) => {
+          // 음식점 좌표가 있으면 실제 거리 계산, 없으면 랜덤 거리
+          let distance = `${(Math.random() * 2 + 0.1).toFixed(1)}km`;
 
-    const menus = foodMenus[foodType] || ["특별 메뉴"];
-    return menus[Math.floor(Math.random() * menus.length)];
+          if (userLocation && item.latitude && item.longitude) {
+            const calculatedDistance = this.calculateDistance(
+              userLocation.latitude,
+              userLocation.longitude,
+              parseFloat(item.latitude),
+              parseFloat(item.longitude)
+            );
+            distance = `${calculatedDistance.toFixed(1)}km`;
+          }
+
+          return {
+            name: item.name || `${foodType} 맛집 ${index + 1}`,
+            title: item.name || `${foodType} 맛집`,
+            reason: item.reason || `${foodType} 전문점으로 유명한 곳입니다.`,
+            location: item.location || userLocation?.address || "서울",
+            price: item.price || "2-3만원",
+            rating: item.rating || "4.5/5.0",
+            distance: distance,
+            imageUrl: item.imageUrl || undefined,
+            foodType: item.foodType || foodType,
+            phone: item.phone || undefined,
+            website: item.website || undefined,
+            latitude: item.latitude ? parseFloat(item.latitude) : undefined,
+            longitude: item.longitude ? parseFloat(item.longitude) : undefined,
+          };
+        });
+      }
+    } catch (error) {
+      console.error("Gemini 응답 파싱 실패:", error);
+    }
+
+    // 파싱 실패 시 기본 추천
+    return this.generateFallbackRecommendations([], userLocation);
+  }
+
+  private calculateDistance(
+    lat1: number,
+    lng1: number,
+    lat2: number,
+    lng2: number
+  ): number {
+    // 하버사인 공식을 사용한 두 지점 간 거리 계산 (km)
+    const R = 6371; // 지구 반지름 (km)
+    const dLat = this.deg2rad(lat2 - lat1);
+    const dLng = this.deg2rad(lng2 - lng1);
+
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(this.deg2rad(lat1)) *
+        Math.cos(this.deg2rad(lat2)) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c;
+
+    return distance;
+  }
+
+  private deg2rad(deg: number): number {
+    return deg * (Math.PI / 180);
+  }
+
+  private generateFallbackRecommendations(
+    answers: Answer[],
+    userLocation?: UserLocation
+  ): FoodRecommendation[] {
+    const mood =
+      answers.find((a) => a.questionId === "mood")?.value || "기분이 좋아요";
+    const foodType =
+      answers.find((a) => a.questionId === "foodType")?.value || "한식";
+    const budget =
+      answers.find((a) => a.questionId === "budget")?.value || "2만원 이하";
+
+    // 가상의 음식점 좌표 (사용자 위치 기준 근처)
+    const nearbyRestaurants =
+      this.generateNearbyRestaurantLocations(userLocation);
+
+    return [
+      {
+        name: `${foodType} 맛집`,
+        title: `추천 ${foodType} 맛집`,
+        reason: `${mood} 기분에 딱 맞는 ${foodType} 전문점입니다. ${budget} 예산에 적합한 가성비 좋은 곳이에요.`,
+        location: userLocation?.address || "서울",
+        price: budget,
+        rating: "4.5/5.0",
+        distance: this.calculateDistanceFromUser(
+          userLocation,
+          nearbyRestaurants[0]
+        ),
+        imageUrl: undefined,
+        foodType: foodType,
+        latitude: nearbyRestaurants[0].lat,
+        longitude: nearbyRestaurants[0].lng,
+      },
+      {
+        name: `${foodType} 전문점`,
+        title: `인기 ${foodType} 전문점`,
+        reason: `현재 기분과 예산을 고려했을 때 가장 만족스러운 선택이 될 것 같습니다.`,
+        location: userLocation?.address || "서울",
+        price: budget,
+        rating: "4.3/5.0",
+        distance: this.calculateDistanceFromUser(
+          userLocation,
+          nearbyRestaurants[1]
+        ),
+        imageUrl: undefined,
+        foodType: foodType,
+        latitude: nearbyRestaurants[1].lat,
+        longitude: nearbyRestaurants[1].lng,
+      },
+      {
+        name: `${foodType} 하우스`,
+        title: `베스트 ${foodType} 하우스`,
+        reason: `지역에서 가장 유명한 ${foodType} 맛집 중 하나로, 특히 ${mood} 때 방문하기 좋은 곳입니다.`,
+        location: userLocation?.address || "서울",
+        price: budget,
+        rating: "4.7/5.0",
+        distance: this.calculateDistanceFromUser(
+          userLocation,
+          nearbyRestaurants[2]
+        ),
+        imageUrl: undefined,
+        foodType: foodType,
+        latitude: nearbyRestaurants[2].lat,
+        longitude: nearbyRestaurants[2].lng,
+      },
+    ];
+  }
+
+  private generateNearbyRestaurantLocations(
+    userLocation?: UserLocation
+  ): Array<{ lat: number; lng: number }> {
+    if (!userLocation) {
+      // 기본 서울 위치 기준
+      return [
+        { lat: 37.5665, lng: 126.978 }, // 명동
+        { lat: 37.5173, lng: 127.0473 }, // 강남
+        { lat: 37.5665, lng: 126.9016 }, // 홍대
+      ];
+    }
+
+    // 사용자 위치 기준 반경 1-3km 내 가상 음식점 위치 생성
+    const restaurants = [];
+    for (let i = 0; i < 3; i++) {
+      const distance = 0.5 + Math.random() * 2.5; // 0.5-3km
+      const angle = Math.random() * 2 * Math.PI; // 랜덤 방향
+
+      const lat = userLocation.latitude + (distance / 111) * Math.cos(angle);
+      const lng =
+        userLocation.longitude +
+        (distance / (111 * Math.cos((userLocation.latitude * Math.PI) / 180))) *
+          Math.sin(angle);
+
+      restaurants.push({ lat, lng });
+    }
+
+    return restaurants;
+  }
+
+  private calculateDistanceFromUser(
+    userLocation?: UserLocation,
+    restaurantLocation?: { lat: number; lng: number }
+  ): string {
+    if (!userLocation || !restaurantLocation) {
+      return `${(Math.random() * 2 + 0.1).toFixed(1)}km`;
+    }
+
+    const distance = this.calculateDistance(
+      userLocation.latitude,
+      userLocation.longitude,
+      restaurantLocation.lat,
+      restaurantLocation.lng
+    );
+
+    return `${distance.toFixed(1)}km`;
   }
 }
 
-// 위치 관련 유틸리티 함수들
+// 위치 서비스 (기존 유지)
 export class LocationService {
+  // 현재 위치 정보를 상세하게 가져오기
+  static async getCurrentLocationDetailed(): Promise<{
+    location: UserLocation | null;
+    accuracy: number;
+    timestamp: number;
+    source: "gps" | "network" | "passive";
+  }> {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) {
+        console.log("❌ 이 브라우저는 위치 서비스를 지원하지 않습니다.");
+        resolve({
+          location: null,
+          accuracy: 0,
+          timestamp: Date.now(),
+          source: "passive",
+        });
+        return;
+      }
+
+      console.log("🌍 GPS 위치 정보 요청 중...");
+
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude, accuracy } = position.coords;
+          const timestamp = position.timestamp;
+
+          console.log(
+            `📍 GPS 좌표 획득: ${latitude}, ${longitude} (정확도: ${accuracy}m)`
+          );
+
+          try {
+            const address = await this.reverseGeocode(latitude, longitude);
+            console.log(`🏠 주소 변환 완료: ${address}`);
+
+            resolve({
+              location: {
+                latitude,
+                longitude,
+                address,
+              },
+              accuracy,
+              timestamp,
+              source: "gps",
+            });
+          } catch (error) {
+            console.error("❌ 주소 변환 실패:", error);
+            resolve({
+              location: {
+                latitude,
+                longitude,
+                address: "주소를 확인할 수 없습니다",
+              },
+              accuracy,
+              timestamp,
+              source: "gps",
+            });
+          }
+        },
+        (error) => {
+          console.error("❌ 위치 정보 획득 실패:", error);
+          let errorMessage = "위치 정보를 가져올 수 없습니다";
+
+          switch (error.code) {
+            case error.PERMISSION_DENIED:
+              errorMessage = "위치 접근 권한이 거부되었습니다";
+              break;
+            case error.POSITION_UNAVAILABLE:
+              errorMessage = "위치 정보를 사용할 수 없습니다";
+              break;
+            case error.TIMEOUT:
+              errorMessage = "위치 정보 요청 시간이 초과되었습니다";
+              break;
+          }
+
+          console.log(`⚠️ ${errorMessage}`);
+          resolve({
+            location: null,
+            accuracy: 0,
+            timestamp: Date.now(),
+            source: "passive",
+          });
+        },
+        {
+          enableHighAccuracy: true, // 고정밀 GPS 사용
+          timeout: 15000, // 15초 타임아웃
+          maximumAge: 60000, // 1분간 캐시
+        }
+      );
+    });
+  }
+
   static async getCurrentLocation(): Promise<UserLocation | null> {
     return new Promise((resolve) => {
       if (!navigator.geolocation) {
-        console.log("위치 서비스가 지원되지 않습니다.");
+        console.log("Geolocation is not supported by this browser.");
         resolve(null);
         return;
       }
@@ -742,21 +661,15 @@ export class LocationService {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
           const { latitude, longitude } = position.coords;
-
           try {
-            // 좌표를 주소로 변환 (역지오코딩)
-            const address = await LocationService.reverseGeocode(
-              latitude,
-              longitude
-            );
-
+            const address = await this.reverseGeocode(latitude, longitude);
             resolve({
               latitude,
               longitude,
               address,
             });
           } catch (error) {
-            console.error("주소 변환 실패:", error);
+            console.error("Reverse geocoding failed:", error);
             resolve({
               latitude,
               longitude,
@@ -764,13 +677,13 @@ export class LocationService {
           }
         },
         (error) => {
-          console.error("위치 정보 가져오기 실패:", error);
+          console.error("Error getting location:", error);
           resolve(null);
         },
         {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 300000, // 5분
+          enableHighAccuracy: true, // GPS 사용
+          timeout: 15000, // 15초 타임아웃
+          maximumAge: 60000, // 1분간 캐시 (더 자주 업데이트)
         }
       );
     });
@@ -780,32 +693,79 @@ export class LocationService {
     lat: number,
     lng: number
   ): Promise<string> {
-    // 실제 환경에서는 Google Maps API, Kakao Map API 등을 사용
-    // 여기서는 좌표 기반으로 대략적인 지역 추정
-    const seoulDistricts = [
-      { name: "강남구", lat: 37.5173, lng: 127.0473 },
-      { name: "마포구", lat: 37.5665, lng: 126.9016 },
-      { name: "종로구", lat: 37.5735, lng: 126.979 },
-      { name: "중구", lat: 37.5636, lng: 126.997 },
-      { name: "서초구", lat: 37.4837, lng: 127.0324 },
-      { name: "영등포구", lat: 37.5264, lng: 126.8962 },
-      { name: "용산구", lat: 37.5384, lng: 126.9654 },
-      { name: "성동구", lat: 37.5636, lng: 127.0369 },
+    try {
+      console.log(`🌍 LocationService에서 좌표 변환: ${lat}, ${lng}`);
+
+      // NaverMapService의 새로운 reverseGeocode 메서드 사용
+      const address = await NaverMapService.reverseGeocode(lat, lng);
+
+      console.log(`✅ 주소 변환 성공: ${address}`);
+      return address;
+    } catch (error) {
+      console.error("❌ NaverMapService reverseGeocode 실패:", error);
+      // API 실패 시 기본 위치 추정 사용
+      return this.fallbackReverseGeocode(lat, lng);
+    }
+  }
+
+  private static fallbackReverseGeocode(lat: number, lng: number): string {
+    // 네이버맵 API 실패 시 사용할 기본 위치 추정
+    const koreaRegions = [
+      // 서울
+      { name: "서울시 강남구", lat: 37.5173, lng: 127.0473, range: 0.015 },
+      { name: "서울시 강북구", lat: 37.6369, lng: 127.0256, range: 0.015 },
+      { name: "서울시 강서구", lat: 37.5509, lng: 126.8495, range: 0.02 },
+      { name: "서울시 관악구", lat: 37.4781, lng: 126.9515, range: 0.015 },
+      { name: "서울시 광진구", lat: 37.5384, lng: 127.0822, range: 0.015 },
+      { name: "서울시 구로구", lat: 37.4954, lng: 126.8874, range: 0.015 },
+      { name: "서울시 금천구", lat: 37.4519, lng: 126.9018, range: 0.015 },
+      { name: "서울시 노원구", lat: 37.6541, lng: 127.0568, range: 0.02 },
+      { name: "서울시 도봉구", lat: 37.6688, lng: 127.0471, range: 0.015 },
+      { name: "서울시 동대문구", lat: 37.5744, lng: 127.0396, range: 0.015 },
+      { name: "서울시 동작구", lat: 37.5124, lng: 126.9393, range: 0.015 },
+      { name: "서울시 마포구", lat: 37.5665, lng: 126.9016, range: 0.015 },
+      { name: "서울시 서대문구", lat: 37.5794, lng: 126.9368, range: 0.015 },
+      { name: "서울시 서초구", lat: 37.4837, lng: 127.0324, range: 0.015 },
+      { name: "서울시 성동구", lat: 37.5636, lng: 127.0369, range: 0.015 },
+      { name: "서울시 성북구", lat: 37.5894, lng: 127.0167, range: 0.015 },
+      { name: "서울시 송파구", lat: 37.5145, lng: 127.1059, range: 0.015 },
+      { name: "서울시 양천구", lat: 37.5168, lng: 126.8665, range: 0.015 },
+      { name: "서울시 영등포구", lat: 37.5264, lng: 126.8962, range: 0.015 },
+      { name: "서울시 용산구", lat: 37.5384, lng: 126.9654, range: 0.015 },
+      { name: "서울시 은평구", lat: 37.6176, lng: 126.9227, range: 0.015 },
+      { name: "서울시 종로구", lat: 37.5735, lng: 126.979, range: 0.015 },
+      { name: "서울시 중구", lat: 37.5636, lng: 126.997, range: 0.015 },
+      { name: "서울시 중랑구", lat: 37.6063, lng: 127.0925, range: 0.015 },
+
+      // 경기도 주요 지역
+      { name: "경기도 수원시", lat: 37.2636, lng: 127.0286, range: 0.03 },
+      { name: "경기도 성남시", lat: 37.4449, lng: 127.1388, range: 0.03 },
+      { name: "경기도 고양시", lat: 37.6584, lng: 126.832, range: 0.03 },
+      { name: "경기도 용인시", lat: 37.2411, lng: 127.1776, range: 0.03 },
+      { name: "경기도 부천시", lat: 37.5036, lng: 126.766, range: 0.02 },
+      { name: "경기도 안산시", lat: 37.3219, lng: 126.8309, range: 0.02 },
+      { name: "경기도 안양시", lat: 37.3943, lng: 126.9568, range: 0.02 },
+      { name: "경기도 남양주시", lat: 37.636, lng: 127.2165, range: 0.03 },
+
+      // 인천
+      { name: "인천시 중구", lat: 37.4738, lng: 126.6216, range: 0.02 },
+      { name: "인천시 남동구", lat: 37.4467, lng: 126.7313, range: 0.02 },
+      { name: "인천시 연수구", lat: 37.4138, lng: 126.6778, range: 0.02 },
     ];
 
-    let closestDistrict = seoulDistricts[0];
+    let closestRegion = koreaRegions[0];
     let minDistance = Infinity;
 
-    for (const district of seoulDistricts) {
+    for (const region of koreaRegions) {
       const distance = Math.sqrt(
-        Math.pow(lat - district.lat, 2) + Math.pow(lng - district.lng, 2)
+        Math.pow(lat - region.lat, 2) + Math.pow(lng - region.lng, 2)
       );
-      if (distance < minDistance) {
+      if (distance < minDistance && distance <= region.range) {
         minDistance = distance;
-        closestDistrict = district;
+        closestRegion = region;
       }
     }
 
-    return `서울시 ${closestDistrict.name}`;
+    return closestRegion.name;
   }
 }

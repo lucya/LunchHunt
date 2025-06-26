@@ -47,18 +47,60 @@ LunchHunt/
 
 ## 🚀 시작하기
 
-### 환경 변수 설정
+### 1. API 키 설정
+
+#### Gemini AI API
+
+1. [Google AI Studio](https://makersuite.google.com/app/apikey)에서 API 키를 발급받습니다
+
+#### 네이버맵 API (위치 정확도 향상)
+
+1. [네이버 클라우드 플랫폼](https://www.ncloud.com/product/applicationService/maps)에서 계정 생성
+2. Maps API 신청 및 애플리케이션 등록
+3. Client ID와 Client Secret 발급
+
+#### 네이버 검색 API (실제 음식점 검색)
+
+1. [네이버 개발자 센터](https://developers.naver.com/main/)에서 애플리케이션 등록
+2. 검색 API 서비스 추가
+3. Client ID와 Client Secret 발급
+
+#### 환경변수 설정
+
+프로젝트 루트에 `.env.local` 파일을 생성하고 다음과 같이 설정합니다:
 
 ```bash
-cp .env.example .env.local
-# .env.local 파일에 Google AI API 키 추가
+# .env.local
+# Gemini AI
+VITE_GEMINI_API_KEY=your_gemini_api_key_here
+
+# Naver Map API (선택사항 - 위치 정확도 향상)
+VITE_NAVER_MAP_CLIENT_ID=your_naver_map_client_id_here
+VITE_NAVER_MAP_CLIENT_SECRET=your_naver_map_client_secret_here
+
+# Naver Search API (실제 음식점 검색)
+VITE_NAVER_CLIENT_ID=your_naver_search_client_id_here
+VITE_NAVER_CLIENT_SECRET=your_naver_search_client_secret_here
 ```
 
-### 설치 및 실행
+### 2. 설치 및 실행
 
 ```bash
+# 의존성 설치
 npm install
+
+# 개발 서버 실행
 npm run dev
+```
+
+### 3. 빌드
+
+```bash
+# 프로덕션 빌드
+npm run build
+
+# 빌드 결과 미리보기
+npm run preview
 ```
 
 ## 📋 요구사항

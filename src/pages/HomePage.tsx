@@ -1,8 +1,13 @@
-import React from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState } from "react";
+import GamePage from "./GamePage";
 
 const HomePage: React.FC = () => {
-  const navigate = useNavigate();
+  const [gameStarted, setGameStarted] = useState(false);
+
+  if (gameStarted) {
+    return <GamePage />;
+  }
+
   return (
     <div
       style={{
@@ -39,7 +44,7 @@ const HomePage: React.FC = () => {
           cursor: "pointer",
           boxShadow: "0 2px 8px rgba(0,0,0,0.07)",
         }}
-        onClick={() => navigate("/game")}>
+        onClick={() => setGameStarted(true)}>
         점심 추천 시작하기
       </button>
     </div>

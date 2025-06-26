@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import {
-  XenovaRecommender,
+  GeminiRecommender,
   LocationService,
   UserLocation,
 } from "../aiRecommender";
@@ -21,6 +21,10 @@ interface FoodRecommendation {
   distance?: string;
   imageUrl?: string;
   foodType?: string;
+  phone?: string;
+  website?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 const GamePage: React.FC = () => {
@@ -36,6 +40,11 @@ const GamePage: React.FC = () => {
   >("loading");
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [manualLocation, setManualLocation] = useState("");
+  const [locationDetails, setLocationDetails] = useState<{
+    accuracy: number;
+    timestamp: number;
+    source: "gps" | "network" | "passive";
+  } | null>(null);
 
   useEffect(() => {
     // 컴포넌트 마운트 시 위치 정보 요청
@@ -45,12 +54,25 @@ const GamePage: React.FC = () => {
   const requestLocation = async () => {
     try {
       setLocationStatus("loading");
-      const location = await LocationService.getCurrentLocation();
+      console.log("🌍 상세 위치 정보 요청 중...");
 
-      if (location) {
-        setUserLocation(location);
+      // 새로운 상세 위치 정보 메서드 사용
+      const locationData = await LocationService.getCurrentLocationDetailed();
+
+      if (locationData.location) {
+        setUserLocation(locationData.location);
+        setLocationDetails({
+          accuracy: locationData.accuracy,
+          timestamp: locationData.timestamp,
+          source: locationData.source,
+        });
         setLocationStatus("granted");
-        console.log("📍 위치 정보 획득:", location);
+        console.log("📍 상세 위치 정보 획득:", {
+          location: locationData.location,
+          accuracy: `${locationData.accuracy}m`,
+          source: locationData.source,
+          timestamp: new Date(locationData.timestamp).toLocaleString(),
+        });
       } else {
         setLocationStatus("denied");
         console.log("📍 위치 정보 사용 불가");
@@ -123,8 +145,8 @@ const GamePage: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const ai = new XenovaRecommender();
-      // 위치 정보를 AI 추천에 전달
+      const ai = new GeminiRecommender();
+      // 위치 정보를 Gemini AI 추천에 전달
       const recs = await ai.generateRecommendations(
         finalAnswers,
         userLocation || undefined
@@ -132,7 +154,7 @@ const GamePage: React.FC = () => {
       setRecommendations(recs);
       setStep(4);
     } catch (error) {
-      console.error("AI 추천 실패:", error);
+      console.error("Gemini AI 추천 실패:", error);
       alert("추천 중 오류가 발생했습니다.");
     } finally {
       setIsLoading(false);
@@ -143,6 +165,43 @@ const GamePage: React.FC = () => {
     setStep(1);
     setAnswers([]);
     setRecommendations([]);
+  };
+
+  const generateNaverMapUrl = (
+    rec: FoodRecommendation,
+    isDirections: boolean = false
+  ) => {
+    if (isDirections && userLocation && rec.latitude && rec.longitude) {
+      // 길찾기 모드 - 현재 위치에서 목적지까지
+      return `https://map.naver.com/v5/directions/${userLocation.longitude},${
+        userLocation.latitude
+      },,/${rec.longitude},${rec.latitude},${encodeURIComponent(
+        rec.name
+      )},/-/transit?c=${rec.longitude},${rec.latitude},15,0,0,0,dh`;
+    } else if (rec.latitude && rec.longitude) {
+      // 음식점 좌표가 있는 경우 - 해당 위치로 직접 이동
+      return `https://map.naver.com/v5/search/${encodeURIComponent(
+        rec.name
+      )}?c=${rec.longitude},${rec.latitude},15,0,0,0,dh`;
+    } else if (rec.location) {
+      // 주소만 있는 경우 - 주소로 검색
+      return `https://map.naver.com/v5/search/${encodeURIComponent(
+        rec.location + " " + rec.name
+      )}`;
+    } else {
+      // 기본 검색
+      return `https://map.naver.com/v5/search/${encodeURIComponent(rec.name)}`;
+    }
+  };
+
+  const handleDistanceClick = (rec: FoodRecommendation) => {
+    const mapUrl = generateNaverMapUrl(rec, false);
+    window.open(mapUrl, "_blank");
+  };
+
+  const handleDirectionsClick = (rec: FoodRecommendation) => {
+    const directionsUrl = generateNaverMapUrl(rec, true);
+    window.open(directionsUrl, "_blank");
   };
 
   if (isLoading) {
@@ -157,14 +216,14 @@ const GamePage: React.FC = () => {
           background: "#f3f4f6",
         }}>
         <h2 style={{ fontSize: "2rem", fontWeight: 600, marginBottom: "1rem" }}>
-          🔍 AI가 위치 기반으로 검색 중...
+          🤖 Gemini AI가 맞춤 추천 중...
         </h2>
         <p style={{ fontSize: "1.2rem", color: "#666", textAlign: "center" }}>
           {userLocation
             ? `${
                 userLocation.address || "현재 위치"
-              } 근처 맛집을 분석하고 있습니다`
-            : "실시간 맛집 정보를 분석하고 있습니다"}
+              } 근처 맛집을 Gemini AI가 분석하고 있습니다`
+            : "Gemini AI가 맛집 정보를 분석하고 있습니다"}
         </p>
         {userLocation && (
           <p style={{ fontSize: "1rem", color: "#888", marginTop: "0.5rem" }}>
@@ -197,30 +256,49 @@ const GamePage: React.FC = () => {
           top: "1rem",
           right: "1rem",
           background: "#fff",
-          padding: "0.5rem 1rem",
+          padding: "0.75rem 1rem",
           borderRadius: "1rem",
           boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
           fontSize: "0.9rem",
           zIndex: 1000,
+          minWidth: "200px",
+          maxWidth: "300px",
         }}>
         {locationStatus === "loading" && "📍 위치 확인 중..."}
         {locationStatus === "granted" && userLocation && (
-          <span style={{ color: "#10b981" }}>
-            📍 {userLocation.address || "위치 확인됨"}
-            <button
-              onClick={handleLocationChange}
-              style={{
-                marginLeft: "0.5rem",
-                background: "none",
-                border: "none",
-                color: "#3b82f6",
-                cursor: "pointer",
-                textDecoration: "underline",
-                fontSize: "0.8rem",
-              }}>
-              변경
-            </button>
-          </span>
+          <div style={{ color: "#10b981" }}>
+            <div style={{ fontSize: "0.9rem", fontWeight: "500" }}>
+              📍 {userLocation.address || "위치 확인됨"}
+            </div>
+
+            <div
+              style={{ marginTop: "0.3rem", display: "flex", gap: "0.5rem" }}>
+              <button
+                onClick={requestLocation}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#10b981",
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                  fontSize: "0.8rem",
+                }}>
+                🔄 새로고침
+              </button>
+              <button
+                onClick={handleLocationChange}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#3b82f6",
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                  fontSize: "0.8rem",
+                }}>
+                📝 변경
+              </button>
+            </div>
+          </div>
         )}
         {locationStatus === "denied" && (
           <span style={{ color: "#f59e0b" }}>
@@ -558,18 +636,61 @@ const GamePage: React.FC = () => {
                             {index + 1}. {rec.name}
                           </h3>
                         </div>
-                        <div style={{ display: "flex", gap: "0.5rem" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: "0.5rem",
+                            flexWrap: "wrap",
+                          }}>
                           {rec.distance && (
                             <span
+                              onClick={() => handleDistanceClick(rec)}
                               style={{
-                                background: "#3b82f6",
+                                background: "#10b981",
                                 color: "#fff",
-                                padding: "0.25rem 0.75rem",
+                                padding: "0.3rem 0.8rem",
                                 borderRadius: "1rem",
-                                fontSize: "0.8rem",
+                                fontSize: "0.85rem",
                                 fontWeight: 600,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.3rem",
+                                cursor: "pointer",
+                                transition: "all 0.2s ease",
+                                boxShadow: "0 2px 4px rgba(16, 185, 129, 0.2)",
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = "#059669";
+                                e.currentTarget.style.transform =
+                                  "translateY(-1px)";
+                                e.currentTarget.style.boxShadow =
+                                  "0 4px 8px rgba(16, 185, 129, 0.3)";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = "#10b981";
+                                e.currentTarget.style.transform =
+                                  "translateY(0)";
+                                e.currentTarget.style.boxShadow =
+                                  "0 2px 4px rgba(16, 185, 129, 0.2)";
+                              }}
+                              title="클릭하면 네이버 지도에서 위치를 확인할 수 있어요!">
+                              🗺️ 현재 위치에서 {rec.distance}
+                            </span>
+                          )}
+                          {rec.rating && (
+                            <span
+                              style={{
+                                background: "#f59e0b",
+                                color: "#fff",
+                                padding: "0.3rem 0.8rem",
+                                borderRadius: "1rem",
+                                fontSize: "0.85rem",
+                                fontWeight: 600,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.3rem",
                               }}>
-                              🚶‍♂️ {rec.distance}
+                              ⭐ {rec.rating}
                             </span>
                           )}
                         </div>
@@ -619,26 +740,61 @@ const GamePage: React.FC = () => {
                             style={{
                               display: "flex",
                               alignItems: "center",
+                              justifyContent: "space-between",
                               gap: "0.5rem",
                               padding: "0.75rem",
                               background: "#f0f9ff",
                               borderRadius: "0.75rem",
                               border: "1px solid #e0f2fe",
                             }}>
-                            <span style={{ fontSize: "1.1rem" }}>📍</span>
-                            <div>
-                              <div
-                                style={{
-                                  fontSize: "0.8rem",
-                                  color: "#64748b",
-                                }}>
-                                위치
-                              </div>
-                              <div
-                                style={{ fontWeight: 600, color: "#0369a1" }}>
-                                {rec.location}
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.5rem",
+                              }}>
+                              <span style={{ fontSize: "1.1rem" }}>📍</span>
+                              <div>
+                                <div
+                                  style={{
+                                    fontSize: "0.8rem",
+                                    color: "#64748b",
+                                  }}>
+                                  위치
+                                </div>
+                                <div
+                                  style={{ fontWeight: 600, color: "#0369a1" }}>
+                                  {rec.location}
+                                </div>
                               </div>
                             </div>
+                            {userLocation && rec.latitude && rec.longitude && (
+                              <button
+                                onClick={() => handleDirectionsClick(rec)}
+                                style={{
+                                  background: "#3b82f6",
+                                  color: "#fff",
+                                  border: "none",
+                                  padding: "0.4rem 0.8rem",
+                                  borderRadius: "0.5rem",
+                                  fontSize: "0.8rem",
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                  transition: "all 0.2s ease",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "0.3rem",
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = "#2563eb";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = "#3b82f6";
+                                }}
+                                title="네이버 지도에서 길찾기">
+                                🧭 길찾기
+                              </button>
+                            )}
                           </div>
                         )}
                         {rec.price && (
