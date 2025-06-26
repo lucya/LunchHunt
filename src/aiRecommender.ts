@@ -152,7 +152,7 @@ export class GeminiRecommender implements AIRecommender {
   private async getRealRestaurantData(
     foodType: string,
     location: string,
-    userLocation?: UserLocation
+    _userLocation?: UserLocation
   ): Promise<FoodRecommendation[]> {
     try {
       console.log("🔍 네이버 검색 API로 실시간 음식점 검색 시작:", {
@@ -205,7 +205,7 @@ export class GeminiRecommender implements AIRecommender {
       );
 
       // 네이버 검색 결과를 FoodRecommendation 형식으로 변환
-      const recommendations = enrichedResults.map((restaurant, index) => {
+      const recommendations = enrichedResults.map((restaurant) => {
         // 거리 계산 (좌표가 없으면 랜덤)
         let distance = `${(Math.random() * 3 + 0.5).toFixed(1)}km`;
 

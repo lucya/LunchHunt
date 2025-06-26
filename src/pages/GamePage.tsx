@@ -3,7 +3,7 @@ import {
   GeminiRecommender,
   LocationService,
   UserLocation,
-} from "../aiRecommender";
+} from "../aiRecommender.ts";
 import { MOODS, FOOD_TYPES, BUDGETS } from "../constants";
 
 interface Answer {
@@ -40,11 +40,6 @@ const GamePage: React.FC = () => {
   >("loading");
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [manualLocation, setManualLocation] = useState("");
-  const [locationDetails, setLocationDetails] = useState<{
-    accuracy: number;
-    timestamp: number;
-    source: "gps" | "network" | "passive";
-  } | null>(null);
 
   useEffect(() => {
     // 컴포넌트 마운트 시 위치 정보 요청
@@ -61,11 +56,7 @@ const GamePage: React.FC = () => {
 
       if (locationData.location) {
         setUserLocation(locationData.location);
-        setLocationDetails({
-          accuracy: locationData.accuracy,
-          timestamp: locationData.timestamp,
-          source: locationData.source,
-        });
+
         setLocationStatus("granted");
         console.log("📍 상세 위치 정보 획득:", {
           location: locationData.location,

@@ -74,7 +74,7 @@ export class NaverMapService {
   // 음식점 사진 가져오기 (네이버 이미지 검색 API 사용)
   private static async getPlacePhotos(
     restaurantName: string,
-    address: string
+    _address: string
   ): Promise<NaverPlacePhoto[]> {
     try {
       const cleanName = this.cleanHtmlTags(restaurantName);
@@ -288,13 +288,12 @@ export class NaverMapService {
   // 음식점 이름으로 대표 사진 1개 가져오기 (개선된 버전)
   static async getRestaurantMainPhoto(
     restaurantName: string,
-    location?: string
+    _location?: string
   ): Promise<string | null> {
     try {
       console.log(`🔍 ${restaurantName} 대표 사진 검색 시작...`);
 
       const cleanName = this.cleanHtmlTags(restaurantName);
-      const locationText = location || "";
 
       const response = await axios.get(`${this.BASE_URL}/search/image`, {
         headers: {
