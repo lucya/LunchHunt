@@ -72,18 +72,26 @@ npm run start
 
 ## 🚀 배포
 
-### Vercel 배포
+### Cloudflare 배포
 
-1. Vercel 계정 연결
-2. 환경 변수 설정
-3. 자동 배포
+1. Cloudflare 계정 연결
+2. Workers 환경변수 설정
+3. Pages + Workers 배포
 
 ```bash
-# Vercel CLI 설치
-npm i -g vercel
+# Wrangler CLI 설치
+npm i -g wrangler
+
+# Cloudflare 로그인
+wrangler login
+
+# 환경변수 설정
+echo "your_naver_client_id" | wrangler secret put VITE_NAVER_CLIENT_ID
+echo "your_naver_client_secret" | wrangler secret put VITE_NAVER_CLIENT_SECRET
+echo "your_gemini_api_key" | wrangler secret put VITE_GEMINI_API_KEY
 
 # 배포
-vercel
+npm run deploy:cloudflare
 ```
 
 ### Docker 배포
@@ -121,9 +129,12 @@ LunchHunt/
 │   ├── naverMapService.ts   # 네이버 API 서비스
 │   ├── constants.ts
 │   └── main.tsx
-├── server.js                # Express 백엔드 서버
+├── workers/
+│   └── api.js               # Cloudflare Workers API
+├── server.js                # Express 개발 서버
+├── wrangler.toml           # Cloudflare 설정
+├── _headers                # Cloudflare Pages 헤더
 ├── Dockerfile
-├── vercel.json
 └── package.json
 ```
 

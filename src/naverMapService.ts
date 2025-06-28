@@ -23,7 +23,7 @@ export class NaverMapService {
     .VITE_NAVER_CLIENT_SECRET;
   private static readonly BASE_URL =
     process.env.NODE_ENV === "production"
-      ? "/api/naver/v1" // 프로덕션에서는 동일한 도메인의 백엔드 사용
+      ? "https://lunchhunt-api.natureweb.workers.dev/api/naver/v1" // Cloudflare Workers URL
       : "http://localhost:3001/api/naver/v1"; // 개발환경에서는 백엔드 서버 직접 호출
 
   // 음식점 검색 (위치 기반 5km 이내)

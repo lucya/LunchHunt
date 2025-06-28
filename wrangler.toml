@@ -1,0 +1,18 @@
+name = "lunchhunt-api"
+main = "workers/api.js"
+compatibility_date = "2024-01-15"
+
+# Cloudflare Pages 설정
+pages_build_output_dir = "dist"
+
+[env.production]
+name = "lunchhunt-api"
+
+[[env.production.vars]]
+ENVIRONMENT = "production"
+
+[env.production.secrets]
+# 환경변수는 wrangler secret put 명령어로 설정
+# wrangler secret put VITE_NAVER_CLIENT_ID
+# wrangler secret put VITE_NAVER_CLIENT_SECRET  
+# wrangler secret put VITE_GEMINI_API_KEY 
