@@ -5,6 +5,82 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>🍽️ LunchHunt</title>
+    <style>
+      /* 반응형 스타일 */
+      @media (max-width: 768px) {
+        .restaurant-card {
+          flex-direction: column !important;
+        }
+        .restaurant-image {
+          width: 100% !important;
+          height: 200px !important;
+        }
+        .restaurant-content {
+          padding: 1rem !important;
+        }
+        .location-status {
+          position: fixed !important;
+          top: 0.5rem !important;
+          right: 0.5rem !important;
+          left: 0.5rem !important;
+          width: auto !important;
+          max-width: none !important;
+          font-size: 0.8rem !important;
+        }
+        .modal-content {
+          width: 95% !important;
+          margin: 1rem !important;
+          padding: 1.5rem !important;
+        }
+        .game-container {
+          padding: 1rem !important;
+        }
+        .question-title {
+          font-size: 1.5rem !important;
+          text-align: center !important;
+        }
+        .button-grid {
+          grid-template-columns: repeat(
+            auto-fit,
+            minmax(120px, 1fr)
+          ) !important;
+          gap: 0.75rem !important;
+        }
+        .recommendation-grid {
+          gap: 1rem !important;
+        }
+        .info-grid {
+          grid-template-columns: 1fr !important;
+          gap: 0.75rem !important;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .restaurant-image {
+          height: 180px !important;
+        }
+        .question-title {
+          font-size: 1.3rem !important;
+        }
+        .button-grid {
+          grid-template-columns: repeat(2, 1fr) !important;
+        }
+        .modal-content {
+          padding: 1rem !important;
+        }
+        .home-title {
+          font-size: 2rem !important;
+        }
+        .home-description {
+          font-size: 1rem !important;
+          padding: 0 0.5rem !important;
+        }
+        .home-button {
+          font-size: 1rem !important;
+          padding: 0.7rem 2rem !important;
+        }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

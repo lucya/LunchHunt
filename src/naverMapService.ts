@@ -21,12 +21,16 @@ export class NaverMapService {
   private static readonly CLIENT_ID = import.meta.env.VITE_NAVER_CLIENT_ID;
   private static readonly CLIENT_SECRET = import.meta.env
     .VITE_NAVER_CLIENT_SECRET;
-  private static readonly BASE_URL = "/api/naver/v1"; // 프록시 사용
+  private static readonly BASE_URL =
+    process.env.NODE_ENV === "production"
+      ? "/api/naver/v1" // 프로덕션에서는 동일한 도메인의 백엔드 사용
+      : "http://localhost:3001/api/naver/v1"; // 개발환경에서는 백엔드 서버 직접 호출
 
-  // 음식점 검색
+  // 음식점 검색 (위치 기반 5km 이내)
   static async searchRestaurant(
     query: string,
-    location?: string
+    location?: string,
+    userLocation?: { latitude: number; longitude: number }
   ): Promise<NaverPlaceDetails[]> {
     try {
       const searchQuery = location ? `${query} ${location}` : query;
@@ -38,9 +42,9 @@ export class NaverMapService {
         },
         params: {
           query: searchQuery,
-          display: 5, // 최대 5개 결과
+          display: 20, // 더 많은 결과를 가져와서 거리 필터링
           start: 1,
-          sort: "random", // 랜덤 정렬
+          sort: "comment", // 리뷰 많은 순으로 정렬
           category: "음식점",
         },
       });
@@ -48,13 +52,79 @@ export class NaverMapService {
       const items = response.data.items || [];
       console.log("🔍 네이버 지도 검색 결과:", items.length, "개");
 
-      // 각 음식점에 대해 상세 정보와 사진 가져오기
+      // 첫 번째 결과의 구조 확인
+      if (items.length > 0) {
+        console.log(
+          "📋 네이버 검색 결과 샘플:",
+          JSON.stringify(items[0], null, 2)
+        );
+      }
+
+      // 사용자 위치가 있으면 5km 이내 필터링
+      let filteredItems = items;
+      if (userLocation) {
+        filteredItems = items.filter((item: any) => {
+          // 네이버 API에서 좌표 정보 추출 (mapx, mapy 필드)
+          if (item.mapx && item.mapy) {
+            // 네이버 좌표계를 위경도로 변환
+            const itemLng = parseFloat(item.mapx) / 10000000; // 경도
+            const itemLat = parseFloat(item.mapy) / 10000000; // 위도
+
+            const distance = this.calculateDistance(
+              userLocation.latitude,
+              userLocation.longitude,
+              itemLat,
+              itemLng
+            );
+
+            console.log(
+              `📍 ${this.cleanHtmlTags(item.title)}: ${distance.toFixed(2)}km`
+            );
+            return distance <= 5; // 5km 이내만
+          }
+          return true; // 좌표 정보가 없으면 포함
+        });
+
+        console.log(
+          `🎯 5km 이내 필터링 결과: ${filteredItems.length}개 (전체 ${items.length}개 중)`
+        );
+      }
+
+      // 각 음식점에 대해 이미지 검색 수행 (네이버 로컬 검색에는 이미지가 없음)
       const detailedResults = await Promise.all(
-        items.map(async (item: any) => {
-          const photos = await this.getPlacePhotos(item.title, item.address);
+        filteredItems.slice(0, 5).map(async (item: any) => {
+          const cleanName = this.cleanHtmlTags(item.title);
+
+          // 이미지 검색 API 사용
+          let photos: NaverPlacePhoto[] = [];
+
+          try {
+            console.log(`🔍 ${cleanName} 이미지 검색 시작...`);
+            const imageUrl = await this.getRestaurantMainPhoto(
+              cleanName,
+              item.address
+            );
+
+            if (imageUrl) {
+              photos = [
+                {
+                  photoUrl: imageUrl,
+                  thumbnailUrl: imageUrl,
+                  width: 400,
+                  height: 300,
+                },
+              ];
+              console.log(`✅ ${cleanName} 이미지 발견:`, imageUrl);
+            } else {
+              console.log(`⚠️ ${cleanName} 이미지 검색 실패`);
+            }
+          } catch (error) {
+            console.error(`❌ ${cleanName} 이미지 검색 오류:`, error);
+          }
+
           return {
             id: item.link || `${item.title}_${item.address}`,
-            name: this.cleanHtmlTags(item.title),
+            name: cleanName,
             address: item.address,
             phone: item.telephone,
             rating: item.rating ? parseFloat(item.rating) : undefined,
@@ -71,54 +141,34 @@ export class NaverMapService {
     }
   }
 
-  // 음식점 사진 가져오기 (네이버 이미지 검색 API 사용)
-  private static async getPlacePhotos(
-    restaurantName: string,
-    _address: string
-  ): Promise<NaverPlacePhoto[]> {
-    try {
-      const cleanName = this.cleanHtmlTags(restaurantName);
-      console.log(`🔍 ${cleanName} 사진 검색 시작...`);
-
-      const response = await axios.get(`${this.BASE_URL}/search/image`, {
-        headers: {
-          "X-Naver-Client-Id": this.CLIENT_ID,
-          "X-Naver-Client-Secret": this.CLIENT_SECRET,
-        },
-        params: {
-          query: cleanName, // 음식점 이름으로 직접 검색
-          display: 10, // 더 많은 결과
-          start: 1,
-          sort: "sim", // 정확도순
-          filter: "large", // 큰 이미지만
-        },
-      });
-
-      const items = response.data.items || [];
-
-      if (items.length > 0) {
-        console.log(`📸 ${cleanName} 사진 발견! 결과: ${items.length}개`);
-
-        // 첫 3개 이미지 반환
-        return items.slice(0, 3).map((item: any) => ({
-          photoUrl: item.link,
-          thumbnailUrl: item.thumbnail,
-          width: parseInt(item.sizewidth) || 400,
-          height: parseInt(item.sizeheight) || 300,
-        }));
-      }
-
-      console.log(`❌ ${cleanName} 사진을 찾을 수 없음`);
-      return [];
-    } catch (error) {
-      console.error(`❌ ${restaurantName} 사진 검색 실패:`, error);
-      return [];
-    }
-  }
-
   // HTML 태그 제거
   private static cleanHtmlTags(text: string): string {
     return text.replace(/<[^>]*>/g, "");
+  }
+
+  // 두 지점 간의 거리 계산 (Haversine 공식)
+  private static calculateDistance(
+    lat1: number,
+    lng1: number,
+    lat2: number,
+    lng2: number
+  ): number {
+    const R = 6371; // 지구의 반지름 (km)
+    const dLat = this.toRadians(lat2 - lat1);
+    const dLng = this.toRadians(lng2 - lng1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(this.toRadians(lat1)) *
+        Math.cos(this.toRadians(lat2)) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  // 도를 라디안으로 변환
+  private static toRadians(degrees: number): number {
+    return degrees * (Math.PI / 180);
   }
 
   // 좌표를 주소로 변환 (Reverse Geocoding)
@@ -288,38 +338,75 @@ export class NaverMapService {
   // 음식점 이름으로 대표 사진 1개 가져오기 (개선된 버전)
   static async getRestaurantMainPhoto(
     restaurantName: string,
-    _location?: string
+    location?: string
   ): Promise<string | null> {
     try {
       console.log(`🔍 ${restaurantName} 대표 사진 검색 시작...`);
 
       const cleanName = this.cleanHtmlTags(restaurantName);
 
-      const response = await axios.get(`${this.BASE_URL}/search/image`, {
-        headers: {
-          "X-Naver-Client-Id": this.CLIENT_ID,
-          "X-Naver-Client-Secret": this.CLIENT_SECRET,
-        },
-        params: {
-          query: cleanName, // 음식점 이름으로 직접 검색
-          display: 5,
-          start: 1,
-          sort: "sim", // 정확도순
-          filter: "large", // 고품질 이미지
-        },
-      });
+      // 다양한 검색 쿼리 시도
+      const searchQueries = [
+        cleanName, // 음식점 이름만
+        `${cleanName} 음식점`, // 음식점 이름 + "음식점"
+        `${cleanName} 맛집`, // 음식점 이름 + "맛집"
+        `${cleanName} 음식`, // 음식점 이름 + "음식"
+      ];
 
-      const items = response.data.items || [];
-
-      if (items.length > 0) {
-        console.log(`✅ ${cleanName} 대표 사진 발견! 결과: ${items.length}개`);
-        return items[0].link; // 첫 번째 이미지 반환
+      // 위치 정보가 있으면 추가
+      if (location) {
+        const cleanLocation = this.cleanHtmlTags(location);
+        searchQueries.push(`${cleanName} ${cleanLocation}`);
       }
 
-      console.log(`❌ ${cleanName} 사진을 찾을 수 없음`);
+      for (const query of searchQueries) {
+        try {
+          console.log(`🔍 검색 쿼리 시도: "${query}"`);
+
+          const response = await axios.get(`${this.BASE_URL}/search/image`, {
+            headers: {
+              "X-Naver-Client-Id": this.CLIENT_ID,
+              "X-Naver-Client-Secret": this.CLIENT_SECRET,
+            },
+            params: {
+              query: query,
+              display: 10,
+              start: 1,
+              sort: "sim", // 정확도순
+              filter: "large", // 고품질 이미지
+            },
+          });
+
+          const items = response.data.items || [];
+
+          if (items.length > 0) {
+            // 유효한 이미지 URL 찾기
+            for (const item of items) {
+              const imageUrl = item.link;
+              if (
+                imageUrl &&
+                imageUrl.startsWith("http") &&
+                imageUrl.includes(".")
+              ) {
+                console.log(
+                  `✅ ${cleanName} 사진 발견! 쿼리: "${query}", URL: ${imageUrl}`
+                );
+                return imageUrl;
+              }
+            }
+          }
+
+          console.log(`⚠️ "${query}" 검색 결과 없음 또는 유효하지 않음`);
+        } catch (queryError) {
+          console.error(`❌ 쿼리 "${query}" 검색 실패:`, queryError);
+          continue; // 다음 쿼리 시도
+        }
+      }
+
+      console.log(`❌ ${cleanName} 모든 검색 쿼리 실패`);
       return null;
     } catch (error) {
-      console.error(`❌ ${restaurantName} 사진 검색 실패:`, error);
+      console.error(`❌ ${restaurantName} 사진 검색 전체 실패:`, error);
       return null;
     }
   }

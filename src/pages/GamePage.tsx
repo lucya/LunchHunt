@@ -231,6 +231,7 @@ const GamePage: React.FC = () => {
 
   return (
     <div
+      className="game-container"
       style={{
         minHeight: "100vh",
         display: "flex",
@@ -242,6 +243,7 @@ const GamePage: React.FC = () => {
       }}>
       {/* 위치 정보 상태 표시 */}
       <div
+        className="location-status"
         style={{
           position: "fixed",
           top: "1rem",
@@ -253,7 +255,8 @@ const GamePage: React.FC = () => {
           fontSize: "0.9rem",
           zIndex: 1000,
           minWidth: "200px",
-          maxWidth: "300px",
+          maxWidth: "calc(100vw - 2rem)",
+          width: "auto",
         }}>
         {locationStatus === "loading" && "📍 위치 확인 중..."}
         {locationStatus === "granted" && userLocation && (
@@ -328,6 +331,7 @@ const GamePage: React.FC = () => {
       {step === 1 && (
         <>
           <h2
+            className="question-title"
             style={{ fontSize: "2rem", fontWeight: 600, marginBottom: "1rem" }}>
             Q1. 오늘 기분은 어떤가요?
           </h2>
@@ -371,6 +375,7 @@ const GamePage: React.FC = () => {
             </p>
           )}
           <div
+            className="button-grid"
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
@@ -401,10 +406,12 @@ const GamePage: React.FC = () => {
       {step === 2 && (
         <>
           <h2
+            className="question-title"
             style={{ fontSize: "2rem", fontWeight: 600, marginBottom: "2rem" }}>
             Q2. 어떤 종류의 음식을 원하시나요?
           </h2>
           <div
+            className="button-grid"
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
@@ -435,10 +442,12 @@ const GamePage: React.FC = () => {
       {step === 3 && (
         <>
           <h2
+            className="question-title"
             style={{ fontSize: "2rem", fontWeight: 600, marginBottom: "2rem" }}>
             Q3. 예산은 얼마정도인가요?
           </h2>
           <div
+            className="button-grid"
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
@@ -469,11 +478,13 @@ const GamePage: React.FC = () => {
       {step === 4 && (
         <>
           <h2
+            className="question-title"
             style={{ fontSize: "2rem", fontWeight: 600, marginBottom: "2rem" }}>
             📍 위치 기반 AI 추천
           </h2>
           {recommendations.length > 0 && (
             <div
+              className="recommendation-grid"
               style={{
                 display: "flex",
                 flexDirection: "column",
@@ -492,13 +503,17 @@ const GamePage: React.FC = () => {
                     overflow: "hidden",
                     transition: "transform 0.2s, box-shadow 0.2s",
                   }}>
-                  <div style={{ display: "flex", flexDirection: "row" }}>
+                  <div
+                    className="restaurant-card"
+                    style={{ display: "flex", flexDirection: "row" }}>
                     {/* 음식 이미지 */}
                     <div
+                      className="restaurant-image"
                       style={{
                         width: "300px",
                         height: "250px",
                         position: "relative",
+                        flexShrink: 0,
                       }}>
                       <img
                         src={rec.imageUrl}
@@ -597,7 +612,9 @@ const GamePage: React.FC = () => {
                     </div>
 
                     {/* 정보 섹션 */}
-                    <div style={{ flex: 1, padding: "2rem" }}>
+                    <div
+                      className="restaurant-content"
+                      style={{ flex: 1, padding: "2rem" }}>
                       <div
                         style={{
                           display: "flex",
@@ -718,6 +735,7 @@ const GamePage: React.FC = () => {
 
                       {/* 상세 정보 */}
                       <div
+                        className="info-grid"
                         style={{
                           display: "grid",
                           gridTemplateColumns:
@@ -878,6 +896,7 @@ const GamePage: React.FC = () => {
             zIndex: 2000,
           }}>
           <div
+            className="modal-content"
             style={{
               background: "#fff",
               padding: "2rem",

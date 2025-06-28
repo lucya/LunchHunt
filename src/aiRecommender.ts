@@ -160,11 +160,17 @@ export class GeminiRecommender implements AIRecommender {
         location,
       });
 
-      // 네이버 검색 API로 음식점 검색
+      // 네이버 검색 API로 음식점 검색 (사용자 위치 기반 5km 이내)
       const searchQuery = `${foodType} 맛집 ${location}`;
       const naverResults = await NaverMapService.searchRestaurant(
         searchQuery,
-        location
+        location,
+        _userLocation
+          ? {
+              latitude: _userLocation.latitude,
+              longitude: _userLocation.longitude,
+            }
+          : undefined
       );
 
       if (naverResults.length === 0) {
@@ -174,40 +180,41 @@ export class GeminiRecommender implements AIRecommender {
 
       console.log(`✅ 네이버에서 ${naverResults.length}개 음식점 발견`);
 
-      // 사진이 없는 음식점들을 위한 추가 사진 검색
-      const enrichedResults = await Promise.all(
-        naverResults.map(async (restaurant) => {
-          if (restaurant.photos.length === 0) {
-            console.log(`🔍 ${restaurant.name} 사진 추가 검색 중...`);
-            try {
-              const additionalPhoto =
-                await NaverMapService.getRestaurantMainPhoto(
-                  restaurant.name,
-                  restaurant.address
-                );
-              if (additionalPhoto) {
-                restaurant.photos = [
-                  {
-                    photoUrl: additionalPhoto,
-                    thumbnailUrl: additionalPhoto,
-                    width: 400,
-                    height: 300,
-                  },
-                ];
-                console.log(`✅ ${restaurant.name} 추가 사진 발견!`);
-              }
-            } catch (error) {
-              console.log(`⚠️ ${restaurant.name} 추가 사진 검색 실패`);
-            }
-          }
-          return restaurant;
-        })
-      );
+      // 네이버 검색 결과를 그대로 사용 (이미지 검색은 NaverMapService에서 처리)
+      const enrichedResults = naverResults;
 
       // 네이버 검색 결과를 FoodRecommendation 형식으로 변환
       const recommendations = enrichedResults.map((restaurant) => {
-        // 거리 계산 (좌표가 없으면 랜덤)
-        let distance = `${(Math.random() * 3 + 0.5).toFixed(1)}km`;
+        // 실제 거리 계산 (NaverMapService에서 이미 5km 이내로 필터링됨)
+        let distance = "정보 없음";
+        let latitude: number | undefined;
+        let longitude: number | undefined;
+
+        // 네이버 API 응답에서 좌표 정보 추출 시도
+        if (
+          restaurant.id &&
+          restaurant.id.includes("mapx") &&
+          restaurant.id.includes("mapy")
+        ) {
+          // 좌표 정보가 있으면 거리 계산
+          try {
+            const coords = restaurant.id.match(/mapx=(\d+).*mapy=(\d+)/);
+            if (coords && _userLocation) {
+              longitude = parseFloat(coords[1]) / 10000000;
+              latitude = parseFloat(coords[2]) / 10000000;
+
+              const calculatedDistance = this.calculateDistance(
+                _userLocation.latitude,
+                _userLocation.longitude,
+                latitude,
+                longitude
+              );
+              distance = `${calculatedDistance.toFixed(1)}km`;
+            }
+          } catch (error) {
+            console.log(`⚠️ ${restaurant.name} 좌표 파싱 실패`);
+          }
+        }
 
         // 첫 번째 사진 URL 가져오기 (유효한 URL인지 확인)
         let mainPhotoUrl = null;
@@ -223,16 +230,18 @@ export class GeminiRecommender implements AIRecommender {
           }
         }
 
-        console.log(`📸 ${restaurant.name} 사진 정보:`, {
+        console.log(`📸 ${restaurant.name} 정보:`, {
           photosCount: restaurant.photos.length,
           mainPhotoUrl: mainPhotoUrl,
-          allPhotos: restaurant.photos.map((p) => p.photoUrl).slice(0, 2), // 처음 2개만 로깅
+          distance: distance,
+          latitude: latitude,
+          longitude: longitude,
         });
 
         return {
           name: restaurant.name,
           title: restaurant.name,
-          reason: `네이버 검색에서 찾은 ${foodType} 전문점으로 실제 운영중입니다.`,
+          reason: `현재 위치에서 ${distance} 거리에 있는 ${foodType} 전문점으로 실제 운영중입니다.`,
           location: restaurant.address,
           price: "가격 정보 없음", // 네이버 API에서 가격 정보가 없을 수 있음
           rating: restaurant.rating
@@ -243,8 +252,8 @@ export class GeminiRecommender implements AIRecommender {
           foodType: foodType,
           phone: restaurant.phone,
           website: undefined,
-          latitude: undefined, // 네이버 로컬 검색 API에서는 좌표를 제공하지 않을 수 있음
-          longitude: undefined,
+          latitude: latitude,
+          longitude: longitude,
         };
       });
 

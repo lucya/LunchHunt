@@ -1,108 +1,175 @@
-# 🍽️ LunchHunt - 점심 메뉴 추천 게임
+# 🍽️ LunchHunt
 
-구글 AI를 활용한 인터랙티브 점심 메뉴 추천 웹 애플리케이션
+AI 기반 점심 메뉴 추천 서비스
 
-## 📋 프로젝트 개요
+## 🚀 기능
 
-LunchHunt는 사용자의 기분, 날씨, 선호도를 바탕으로 AI가 개인맞춤형 점심 메뉴를 추천해주는 게임형 웹 애플리케이션입니다.
-
-## 🎯 주요 기능
-
-- **AI 기반 메뉴 추천**: Google Gemini AI를 활용한 개인화된 음식 추천
-- **인터랙티브 게임**: 질문 답변을 통한 재미있는 추천 과정
-- **다양한 필터링**: 음식 종류, 가격대, 거리, 알레르기 등
-- **시각적 결과**: 음식 이미지와 상세 정보 제공
-- **히스토리 기능**: 이전 추천 결과 저장 및 관리
+- **AI 추천**: Gemini AI가 기분, 음식 종류, 예산을 분석해서 맞춤 추천
+- **실시간 검색**: 네이버 API를 통한 실제 운영중인 음식점 정보
+- **위치 기반**: GPS를 활용한 주변 맛집 추천
+- **실제 사진**: 네이버 이미지 검색으로 음식점 실제 사진 표시
 
 ## 🛠️ 기술 스택
 
-- **Frontend**: React 18 + TypeScript
-- **Styling**: Tailwind CSS
-- **AI**: Google Gemini API
-- **State Management**: React Hooks (useState, useContext)
-- **Build Tool**: Vite
-- **Deployment**: Vercel/Netlify
+**Frontend:**
+
+- React + TypeScript
+- Vite
+- CSS-in-JS
+
+**Backend:**
+
+- Node.js + Express
+- 네이버 검색 API
+- Google Gemini AI
+
+## 📋 환경 설정
+
+### 1. 환경 변수 설정
+
+`.env` 파일을 생성하고 다음 값들을 설정하세요:
+
+```bash
+# 네이버 API 키 (https://developers.naver.com/apps/)
+VITE_NAVER_CLIENT_ID=your_naver_client_id_here
+VITE_NAVER_CLIENT_SECRET=your_naver_client_secret_here
+
+# Gemini AI API 키 (https://ai.google.dev/)
+VITE_GEMINI_API_KEY=your_gemini_api_key_here
+
+# 백엔드 서버 포트 (기본값: 3001)
+PORT=3001
+```
+
+### 2. 의존성 설치
+
+```bash
+npm install
+```
+
+## 🏃‍♂️ 실행 방법
+
+### 개발 환경
+
+```bash
+# 프론트엔드 + 백엔드 동시 실행
+npm run dev
+
+# 개별 실행
+npm run dev:frontend  # Vite 개발 서버 (포트 5173)
+npm run dev:backend   # Express 서버 (포트 3001)
+```
+
+### 프로덕션 빌드
+
+```bash
+# 빌드
+npm run build
+
+# 프로덕션 서버 실행
+npm run start
+```
+
+## 🚀 배포
+
+### Vercel 배포
+
+1. Vercel 계정 연결
+2. 환경 변수 설정
+3. 자동 배포
+
+```bash
+# Vercel CLI 설치
+npm i -g vercel
+
+# 배포
+vercel
+```
+
+### Docker 배포
+
+```bash
+# Docker 이미지 빌드
+docker build -t lunchhunt .
+
+# 컨테이너 실행
+docker run -p 3001:3001 --env-file .env lunchhunt
+```
+
+### 일반 서버 배포
+
+```bash
+# 빌드
+npm run build
+
+# PM2로 실행 (권장)
+pm2 start server.js --name lunchhunt
+
+# 또는 직접 실행
+NODE_ENV=production node server.js
+```
 
 ## 📁 프로젝트 구조
 
 ```
 LunchHunt/
-├── public/
-│   ├── index.html
-│   └── favicon.ico
 ├── src/
-│   ├── components/
-│   │   ├── common/
-│   │   ├── game/
-│   │   └── result/
-│   ├── hooks/
-│   ├── services/
-│   ├── types/
-│   ├── utils/
-│   └── App.tsx
-├── .env.example
-├── package.json
-└── README.md
+│   ├── pages/
+│   │   ├── HomePage.tsx
+│   │   └── GamePage.tsx
+│   ├── aiRecommender.ts     # Gemini AI 추천 로직
+│   ├── naverMapService.ts   # 네이버 API 서비스
+│   ├── constants.ts
+│   └── main.tsx
+├── server.js                # Express 백엔드 서버
+├── Dockerfile
+├── vercel.json
+└── package.json
 ```
 
-## 🚀 시작하기
+## 🔧 API 엔드포인트
 
-### 1. API 키 설정
+### 백엔드 API
 
-#### Gemini AI API
+- `GET /api/health` - 서버 상태 확인
+- `GET /api/naver/v1/search/local.json` - 네이버 로컬 검색
+- `GET /api/naver/v1/search/image` - 네이버 이미지 검색
+- `GET /api/naver/v1/map-reversegeocode/v2/gc` - 역지오코딩
 
-1. [Google AI Studio](https://makersuite.google.com/app/apikey)에서 API 키를 발급받습니다
+## 🌟 주요 특징
 
-#### 네이버맵 API (위치 정확도 향상)
+### 실시간 음식점 검색
 
-1. [네이버 클라우드 플랫폼](https://www.ncloud.com/product/applicationService/maps)에서 계정 생성
-2. Maps API 신청 및 애플리케이션 등록
-3. Client ID와 Client Secret 발급
+- 네이버 검색 API를 통한 실제 운영중인 음식점 정보
+- 실시간 이미지 검색으로 음식점 사진 표시
 
-#### 네이버 검색 API (실제 음식점 검색)
+### AI 맞춤 추천
 
-1. [네이버 개발자 센터](https://developers.naver.com/main/)에서 애플리케이션 등록
-2. 검색 API 서비스 추가
-3. Client ID와 Client Secret 발급
+- 사용자의 기분, 선호 음식, 예산을 종합 분석
+- Gemini AI의 자연어 처리로 개인화된 추천
 
-#### 환경변수 설정
+### 위치 기반 서비스
 
-프로젝트 루트에 `.env.local` 파일을 생성하고 다음과 같이 설정합니다:
+- GPS 위치 정보 활용
+- 네이버 맵 연동으로 길찾기 제공
 
-```bash
-# .env.local
-# Gemini AI
-VITE_GEMINI_API_KEY=your_gemini_api_key_here
+## 🐛 트러블슈팅
 
-# Naver Map API (선택사항 - 위치 정확도 향상)
-VITE_NAVER_MAP_CLIENT_ID=your_naver_map_client_id_here
-VITE_NAVER_MAP_CLIENT_SECRET=your_naver_map_client_secret_here
+### 이미지가 로드되지 않는 경우
 
-# Naver Search API (실제 음식점 검색)
-VITE_NAVER_CLIENT_ID=your_naver_search_client_id_here
-VITE_NAVER_CLIENT_SECRET=your_naver_search_client_secret_here
-```
+- 네이버 API 키 확인
+- 백엔드 서버 실행 상태 확인
+- CORS 설정 확인
 
-### 2. 설치 및 실행
+### 위치 정보가 작동하지 않는 경우
 
-```bash
-# 의존성 설치
-npm install
+- HTTPS 환경에서 실행 (위치 API 요구사항)
+- 브라우저 위치 권한 허용
 
-# 개발 서버 실행
-npm run dev
-```
+## 📄 라이선스
 
-### 3. 빌드
+MIT License
 
-```bash
-# 프로덕션 빌드
-npm run build
+## 🤝 기여
 
-# 빌드 결과 미리보기
-npm run preview
-```
-
-## 📋 요구사항
-
-자세한 요구사항은 `REQUIREMENTS.md` 파일을 참조하세요.
+Pull Request와 Issue는 언제나 환영합니다!
