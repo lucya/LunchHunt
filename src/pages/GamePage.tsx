@@ -5,6 +5,7 @@ import {
   UserLocation,
 } from "../aiRecommender.ts";
 import { MOODS, FOOD_TYPES, BUDGETS } from "../constants";
+import { NaverMapService } from "../naverMapService";
 
 interface Answer {
   questionId: string;
@@ -42,9 +43,67 @@ const GamePage: React.FC = () => {
   const [manualLocation, setManualLocation] = useState("");
 
   useEffect(() => {
-    // 컴포넌트 마운트 시 위치 정보 요청
-    requestLocation();
+    // 컴포넌트 마운트 시 URL 파라미터 확인 후 위치 정보 요청
+    checkUrlParamsAndRequestLocation();
   }, []);
+
+  const checkUrlParamsAndRequestLocation = async () => {
+    // URL 파라미터에서 위도/경도 확인
+    const urlParams = new URLSearchParams(window.location.search);
+    const lat = urlParams.get("lat") || urlParams.get("latitude");
+    const lng = urlParams.get("lng") || urlParams.get("longitude");
+
+    if (lat && lng) {
+      const latitude = parseFloat(lat);
+      const longitude = parseFloat(lng);
+
+      if (!isNaN(latitude) && !isNaN(longitude)) {
+        console.log("📍 URL 파라미터에서 위치 정보 획득:", {
+          latitude,
+          longitude,
+        });
+
+        try {
+          setLocationStatus("loading");
+          // 좌표를 주소로 변환
+          const address = await NaverMapService.reverseGeocode(
+            latitude,
+            longitude
+          );
+
+          const locationFromParams: UserLocation = {
+            latitude,
+            longitude,
+            address,
+          };
+
+          setUserLocation(locationFromParams);
+          setLocationStatus("granted");
+          console.log("✅ URL 파라미터 위치 설정 완료:", locationFromParams);
+          return;
+        } catch (error) {
+          console.error("❌ URL 파라미터 위치 처리 실패:", error);
+          // 주소 변환 실패해도 좌표는 사용
+          const locationFromParams: UserLocation = {
+            latitude,
+            longitude,
+            address: "주소를 확인할 수 없습니다",
+          };
+
+          setUserLocation(locationFromParams);
+          setLocationStatus("granted");
+          console.log(
+            "⚠️ 주소 변환 실패했지만 좌표는 사용:",
+            locationFromParams
+          );
+          return;
+        }
+      }
+    }
+
+    // URL 파라미터가 없거나 유효하지 않으면 일반적인 위치 요청
+    requestLocation();
+  };
 
   const requestLocation = async () => {
     try {
